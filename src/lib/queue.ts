@@ -8,7 +8,7 @@ import { config } from "./config";
 // - cron:  定时任务（repeatable jobs 注册在 scripts/worker.ts）
 
 export type LlmJob =
-  | { kind: "parse-thread"; threadId: string }
+  | { kind: "parse-thread"; threadId: string; rejectReason?: string }
   | { kind: "rank-pool"; projectId?: string }
   | { kind: "gen-test-tasks"; requirementId: string }
   | { kind: "daily-report"; projectId: string; date: string };

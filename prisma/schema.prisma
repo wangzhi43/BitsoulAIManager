@@ -148,6 +148,23 @@ model AgentToken {
 
 // ---------- 需求 ----------
 
+/// 聚合前的原始入站消息（微信）。同会话静默超过聚合窗口后合并为需求线索（RequirementSource）
+model InboxMessage {
+  id           String    @id @default(cuid())
+  msgId        String    @unique // Bot 侧消息 id，用于去重（至少一次投递）
+  convId       String
+  convName     String?
+  senderName   String?
+  msgType      String // text / image / file
+  text         String?
+  attachmentId String?
+  ts           DateTime // 微信侧消息时间
+  threadedAt   DateTime? // 已归入线索的时间；null = 待聚合
+  createdAt    DateTime  @default(now())
+
+  @@index([convId, threadedAt])
+}
+
 model RequirementSource {
   id           String        @id @default(cuid())
   channel      SourceChannel
@@ -165,7 +182,7 @@ model RequirementSource {
 model Requirement {
   id             String     @id @default(cuid())
   seq            Int        @unique @default(autoincrement()) // 展示为 REQ-<seq>
-  projectId      String
+  projectId      String? // 拆解时无法判断归属则为空，确认时必须指定
   sourceId       String
   title          String
   userStory      String
@@ -184,7 +201,7 @@ model Requirement {
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
-  project     Project           @relation(fields: [projectId], references: [id])
+  project     Project?          @relation(fields: [projectId], references: [id])
   source      RequirementSource @relation(fields: [sourceId], references: [id])
   dailyBranch DailyBranch?      @relation(fields: [dailyBranchId], references: [id])
   parent      Requirement?      @relation("DefectOrigin", fields: [parentId], references: [id])

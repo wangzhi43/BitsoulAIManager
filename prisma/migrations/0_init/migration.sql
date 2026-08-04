@@ -87,6 +87,23 @@ CREATE TABLE "AgentToken" (
 );
 
 -- CreateTable
+CREATE TABLE "InboxMessage" (
+    "id" TEXT NOT NULL,
+    "msgId" TEXT NOT NULL,
+    "convId" TEXT NOT NULL,
+    "convName" TEXT,
+    "senderName" TEXT,
+    "msgType" TEXT NOT NULL,
+    "text" TEXT,
+    "attachmentId" TEXT,
+    "ts" TIMESTAMP(3) NOT NULL,
+    "threadedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "InboxMessage_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "RequirementSource" (
     "id" TEXT NOT NULL,
     "channel" "SourceChannel" NOT NULL,
@@ -104,7 +121,7 @@ CREATE TABLE "RequirementSource" (
 CREATE TABLE "Requirement" (
     "id" TEXT NOT NULL,
     "seq" SERIAL NOT NULL,
-    "projectId" TEXT NOT NULL,
+    "projectId" TEXT,
     "sourceId" TEXT NOT NULL,
     "title" TEXT NOT NULL,
     "userStory" TEXT NOT NULL,
@@ -317,6 +334,12 @@ CREATE UNIQUE INDEX "AgentToken_tokenHash_key" ON "AgentToken"("tokenHash");
 CREATE INDEX "AgentToken_agentId_idx" ON "AgentToken"("agentId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "InboxMessage_msgId_key" ON "InboxMessage"("msgId");
+
+-- CreateIndex
+CREATE INDEX "InboxMessage_convId_threadedAt_idx" ON "InboxMessage"("convId", "threadedAt");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "RequirementSource_threadId_key" ON "RequirementSource"("threadId");
 
 -- CreateIndex
@@ -362,7 +385,7 @@ CREATE UNIQUE INDEX "DailyReport_projectId_date_key" ON "DailyReport"("projectId
 ALTER TABLE "AgentToken" ADD CONSTRAINT "AgentToken_agentId_fkey" FOREIGN KEY ("agentId") REFERENCES "AgentAccount"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Requirement" ADD CONSTRAINT "Requirement_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Requirement" ADD CONSTRAINT "Requirement_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Requirement" ADD CONSTRAINT "Requirement_sourceId_fkey" FOREIGN KEY ("sourceId") REFERENCES "RequirementSource"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

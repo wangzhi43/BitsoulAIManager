@@ -5,13 +5,13 @@ BitSoul AI Manager 方案设计与评审：PRD + 技术方案已产出，等待�
 
 ## 步骤
 - [ ] M1 收尾：推送 GitHub（待管理员同意）、服务器部署冒烟（compose up + migrate + seed）、三项目 GitHub 仓库确认
-- [ ] M2 需求流入与拆解：Ingest API / 聚合窗口 / 产品专家 Agent / 手动导入 / 确认流（手机端）
 - [ ] M3 任务池与 Git 自动化：优先级 Agent / Agent API / daily+feature 分支自动化
 - [ ] M4 测试闭环：测试专家 Agent / 测试池 / 报告入仓 / 自动审核
 - [ ] M5 看板与收尾：三层看板 / 日报 / docs 自动写入 / 分支审查页 / LLM 配置页
 - [ ] M6 微信打通：OpenClaw 插件 / 双向通道 / 端到端 MVP 验收（PRD §6）
 
 ## 已完成
+- [x] M2 需求流入与拆解：微信 Ingest API（HMAC 签名/幂等/白名单）、消息聚合窗口 cron、产品专家 Agent（多模态拆解 + 驳回重拆）、手动导入（文本+附件）、LLM 供应商与角色模型配置（API+设置页）、确认流（确认/编辑/驳回/合并，手机优先卡片式）、采集箱页、管理端底部导航壳
 - [x] 阅读需求说明书，调研三个待管理项目（BitSoulClaw / bitsoulofficial / minsheng-worklog-mp）
 - [x] 与管理员确认四项关键决策：OpenClaw 微信接入、Next.js 全栈、云服务器+本地 Agent、多供应商模型
 - [x] 建立项目规范 CLAUDE.md 与目录约定
