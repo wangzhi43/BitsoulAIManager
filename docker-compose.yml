@@ -2,7 +2,11 @@
 # 服务绑 127.0.0.1，服务器 Nginx 反代 pm.bitsouls.cn → 127.0.0.1:3100 并终止 TLS
 services:
   app:
-    build: .
+    build:
+      context: .
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+        PRISMA_MIRROR: ${PRISMA_MIRROR:-}
     restart: unless-stopped
     ports:
       - "127.0.0.1:3100:3100"
@@ -20,7 +24,11 @@ services:
         condition: service_started
 
   worker:
-    build: .
+    build:
+      context: .
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+        PRISMA_MIRROR: ${PRISMA_MIRROR:-}
     restart: unless-stopped
     command: ["npx", "tsx", "scripts/worker.ts"]
     env_file: .env

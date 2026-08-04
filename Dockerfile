@@ -4,10 +4,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends git openssl ca-
 WORKDIR /app
 
 FROM base AS deps
+# 国内服务器构建时传 --build-arg NPM_REGISTRY=https://registry.npmmirror.com
+ARG NPM_REGISTRY=https://registry.npmjs.org
+ARG PRISMA_MIRROR=""
+ENV PRISMA_ENGINES_MIRROR=$PRISMA_MIRROR
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm config set registry $NPM_REGISTRY && npm ci
 
 FROM base AS build
+ARG PRISMA_MIRROR=""
+ENV PRISMA_ENGINES_MIRROR=$PRISMA_MIRROR
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate && npm run build
