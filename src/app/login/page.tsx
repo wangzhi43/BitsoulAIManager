@@ -38,11 +38,17 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-dvh items-center justify-center p-6">
-      <form onSubmit={submit} className="w-full max-w-sm space-y-5">
+    <main className="flex min-h-dvh items-center justify-center bg-gradient-to-b from-indigo-50 via-zinc-50 to-zinc-100 p-6 dark:from-zinc-950 dark:via-zinc-950 dark:to-zinc-900">
+      <form
+        onSubmit={submit}
+        className="w-full max-w-sm space-y-5 rounded-3xl border border-zinc-200/80 bg-white p-7 shadow-lg shadow-zinc-200/50 dark:border-zinc-800 dark:bg-zinc-900 dark:shadow-none"
+      >
         <div className="text-center">
-          <h1 className="text-2xl font-semibold">BitSoul AI Manager</h1>
-          <p className="mt-1 text-sm opacity-60">多 Agent 自动化项目管理平台</p>
+          <span className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 text-xl font-bold text-white">
+            B
+          </span>
+          <h1 className="text-2xl font-semibold tracking-tight">BitSoul AI Manager</h1>
+          <p className="mt-1 text-sm text-zinc-400">多 Agent 自动化项目管理平台</p>
         </div>
         <div className="space-y-3">
           <input
@@ -65,7 +71,7 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={loading || !username || !password}
-          className="w-full rounded-xl bg-zinc-900 py-3 text-base font-medium text-white disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900"
+          className="w-full rounded-xl bg-indigo-600 py-3 text-base font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-40"
         >
           {loading ? "登录中…" : "登录"}
         </button>
