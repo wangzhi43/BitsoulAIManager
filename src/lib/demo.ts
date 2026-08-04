@@ -14,6 +14,97 @@ const now = () => new Date();
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000);
 const daysAgo = (d: number) => new Date(Date.now() - d * 86400_000);
 
+export const DEMO_STATS = {
+  kpis: {
+    pendingConfirm: 4, inProgress: 10, pendingAccept: 3, acceptedToday: 3,
+    spark: { created: [2, 4, 3, 6, 5, 7, 4], accepted: [1, 2, 2, 4, 3, 5, 3] },
+  },
+  trend14d: {
+    labels: Array.from({ length: 14 }, (_, i) => {
+      const d = new Date(Date.now() - (13 - i) * 86400_000);
+      return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    }),
+    created: [1, 3, 2, 4, 3, 5, 4, 2, 4, 3, 6, 5, 7, 4],
+    accepted: [0, 1, 2, 2, 3, 3, 2, 1, 2, 2, 4, 3, 5, 3],
+  },
+  statusDist: [
+    { name: "待确认", value: 4 },
+    { name: "待开发", value: 5 },
+    { name: "开发中", value: 3 },
+    { name: "测试中", value: 2 },
+    { name: "待验收", value: 3 },
+  ],
+  projects: [
+    { id: "demo-p1", name: "BitSoulClaw", active: true, pendingConfirm: 3, developing: 4, testing: 1, pendingAccept: 2, conflicts: 1 },
+    { id: "demo-p2", name: "bitsoulofficial", active: true, pendingConfirm: 1, developing: 2, testing: 0, pendingAccept: 0, conflicts: 0 },
+    { id: "demo-p3", name: "minsheng-worklog-mp", active: true, pendingConfirm: 0, developing: 2, testing: 1, pendingAccept: 1, conflicts: 0 },
+  ],
+  agentRank: [
+    { label: "test-agent-1", value: 31, hint: "测试" },
+    { label: "dev-agent-1", value: 23, hint: "开发" },
+    { label: "dev-agent-2", value: 17, hint: "开发" },
+    { label: "claw-both-1", value: 13, hint: "全能" },
+  ],
+  llm7d: {
+    byDay: [
+      { label: "29", value: 142000 }, { label: "30", value: 188000 }, { label: "31", value: 96000 },
+      { label: "01", value: 231000 }, { label: "02", value: 175000 }, { label: "03", value: 264000 }, { label: "04", value: 189000 },
+    ],
+    byRole: [
+      { name: "产品专家", value: 550400 },
+      { name: "测试专家", value: 488100 },
+      { name: "项管专家", value: 246000 },
+    ],
+  },
+  recentEvents: [
+    { seq: 95, title: "客户列表分页加载", note: "测试全部通过（8/8），自动审核通过", actor: "system", at: hoursAgo(0.4) },
+    { seq: 96, title: "修复图片上传后预览旋转", note: "开发提交：按 EXIF 方向归一化", actor: "agent:dev-agent-1", at: hoursAgo(1.1) },
+    { seq: 101, title: "支持导出周报为 Word", note: "自动拆解", actor: "expert:PRODUCT", at: hoursAgo(2) },
+    { seq: 97, title: "语音输入", note: "合并冲突，需人工处理：audio/recorder.ts", actor: "system", at: hoursAgo(3.5) },
+    { seq: 94, title: "导出按钮权限修复", note: "验收通过", actor: "admin", at: hoursAgo(5) },
+    { seq: 99, title: "官网首页客户案例轮播", note: "确认进入待开发池", actor: "admin", at: hoursAgo(6) },
+  ],
+  botLastSeen: hoursAgo(0.01).toISOString(),
+  agentActive: 4,
+};
+
+export const DEMO_REQ_LIST = [
+  { id: "demo-r1", seq: 101, title: "支持导出周报为 Word 文档", project: "BitSoulClaw", status: "PENDING_CONFIRM", priority: null, complexity: "M", customer: "民生理财", updatedAt: hoursAgo(2) },
+  { id: "demo-r2", seq: 102, title: "登录页增加微信扫码登录", project: "bitsoulofficial", status: "PENDING_CONFIRM", priority: null, complexity: "L", customer: "比灵科技", updatedAt: hoursAgo(2) },
+  { id: "demo-d1", seq: 96, title: "修复图片上传后预览旋转 90 度的问题", project: "BitSoulClaw", status: "DEVELOPING", priority: "P0", complexity: "S", customer: "民生理财", updatedAt: hoursAgo(1) },
+  { id: "demo-d2", seq: 99, title: "官网首页新增客户案例轮播", project: "bitsoulofficial", status: "READY", priority: "P1", complexity: "M", customer: null, updatedAt: hoursAgo(6) },
+  { id: "demo-t1", seq: 95, title: "客户列表分页加载", project: "bitsoulofficial", status: "PENDING_ACCEPT", priority: "P1", complexity: "M", customer: "比灵科技", updatedAt: hoursAgo(0.5) },
+  { id: "demo-x1", seq: 94, title: "导出按钮权限修复", project: "BitSoulClaw", status: "ACCEPTED", priority: "P1", complexity: "S", customer: "民生理财", updatedAt: hoursAgo(5) },
+  { id: "demo-x2", seq: 93, title: "官网 SEO 元信息完善", project: "bitsoulofficial", status: "ACCEPTED", priority: "P2", complexity: "S", customer: null, updatedAt: daysAgo(1) },
+];
+
+export const DEMO_REQ_DETAIL = {
+  id: "demo-t1",
+  seq: 95,
+  title: "客户列表分页加载",
+  status: "PENDING_ACCEPT",
+  priority: "P1",
+  complexity: "M",
+  project: "bitsoulofficial",
+  userStory: "作为运营人员，我想让客户列表分页加载，以便在客户量大时页面不卡顿。",
+  acceptance: ["每页 20 条，滚动到底自动加载", "加载中有骨架屏提示", "总数展示在列表头部"],
+  clarifications: [],
+  featureBranch: "feature/REQ-95",
+  dailyBranch: "daily/20260804",
+  customer: "比灵科技 · 李经理（微信）",
+  submitNote: "按 20 条/页分页，滚动到底自动加载下一页",
+  agent: "dev-agent-1",
+  report: { conclusion: "PASS", passRate: 1, cases: 8 },
+  events: [
+    { at: hoursAgo(26), actor: "expert:PRODUCT", note: "自动拆解", to: "PENDING_CONFIRM" },
+    { at: hoursAgo(24), actor: "admin", note: "确认进入待开发池", to: "READY" },
+    { at: hoursAgo(20), actor: "agent:dev-agent-1", note: "认领开发", to: "DEVELOPING" },
+    { at: hoursAgo(6), actor: "system", note: "已合并到当日分支；变更：4 个文件", to: "PENDING_TEST" },
+    { at: hoursAgo(3), actor: "agent:test-agent-1", note: "认领测试", to: "TESTING" },
+    { at: hoursAgo(0.5), actor: "system", note: "测试全部通过（8/8），自动审核通过", to: "PENDING_ACCEPT" },
+  ],
+};
+
 export const DEMO = {
   dashboard: {
     projects: [

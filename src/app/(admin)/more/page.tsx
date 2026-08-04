@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { isDemoMode } from "@/lib/demo";
 import { DemoToggle } from "@/components/DemoControls";
+import { ChangePasswordForm } from "./ui";
 
 export const dynamic = "force-dynamic";
 
 export default async function MorePage() {
   const demo = await isDemoMode();
   const links = [
+    { href: "/requirements", label: "需求列表", desc: "全部需求的状态筛选、详情与验收操作", icon: "≔" },
     { href: "/inbox", label: "采集箱与手动导入", desc: "微信消息聚合状态、粘贴/上传导入需求", icon: "⇩" },
     { href: "/agents", label: "Agent 看板与账号", desc: "各 Agent 当前任务、账号创建与启停", icon: "🤖" },
     { href: "/reports", label: "每日进度报告", desc: "按项目的每日日报", icon: "📋" },
@@ -35,6 +37,7 @@ export default async function MorePage() {
             </li>
           ))}
         </ul>
+        <ChangePasswordForm />
         <form action="/api/admin/logout" method="post" className="pt-2">
           <button className="w-full rounded-2xl border border-zinc-300 py-2.5 text-sm text-zinc-500 dark:border-zinc-700">
             退出登录
