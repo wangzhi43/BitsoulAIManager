@@ -7,6 +7,7 @@ services:
       args:
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
         PRISMA_MIRROR: ${PRISMA_MIRROR:-}
+        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-}
     restart: unless-stopped
     ports:
       - "127.0.0.1:3100:3100"
@@ -29,6 +30,7 @@ services:
       args:
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
         PRISMA_MIRROR: ${PRISMA_MIRROR:-}
+        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-}
     restart: unless-stopped
     command: ["npx", "tsx", "scripts/worker.ts"]
     env_file: .env

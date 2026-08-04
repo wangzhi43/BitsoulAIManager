@@ -1,6 +1,9 @@
 # 单镜像双用途：app（next start）与 worker（tsx scripts/worker.ts），compose 里用 command 区分
 FROM node:22-slim AS base
-RUN apt-get update && apt-get install -y --no-install-recommends git openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+# 国内构建传 --build-arg DEBIAN_MIRROR=mirrors.aliyun.com
+ARG DEBIAN_MIRROR=""
+RUN if [ -n "$DEBIAN_MIRROR" ]; then sed -i "s/deb.debian.org/$DEBIAN_MIRROR/g" /etc/apt/sources.list.d/debian.sources; fi \
+    && apt-get update && apt-get install -y --no-install-recommends git openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
 FROM base AS deps
