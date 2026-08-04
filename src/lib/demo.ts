@@ -66,6 +66,8 @@ export const DEMO_STATS = {
   ],
   botLastSeen: hoursAgo(0.01).toISOString(),
   agentActive: 4,
+  quality: { avgLeadHours: 26.4, avgDevHours: 9.8, reworkRate: 12, samples: 17 },
+  usageAlert: null,
 };
 
 export const DEMO_REQ_LIST = [

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { apiError, apiOk } from "@/lib/api";
 import { currentAdmin, hashPassword } from "@/lib/auth";
+import { audit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -50,5 +51,7 @@ export async function POST(req: NextRequest) {
       projectIds: d.projectIds,
     },
   });
+  const adminUser = await currentAdmin();
+  await audit(`admin:${adminUser?.id}`, "create-agent", `agent:${d.username}`, d.role);
   return apiOk({ id: agent.id }, 201);
 }

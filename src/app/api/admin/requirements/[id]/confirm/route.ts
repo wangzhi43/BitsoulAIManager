@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { apiError, apiOk } from "@/lib/api";
 import { currentAdmin } from "@/lib/auth";
 import { getQueues } from "@/lib/queue";
+import { audit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -53,5 +54,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     file: "requirements-log.md",
     content: `\n## ${new Date().toISOString().slice(0, 10)} 新增 REQ-${requirement.seq} ${requirement.title}\n- 用户故事：${requirement.userStory.split("\n")[0]}\n- 复杂度：${requirement.complexity}\n`,
   });
+  await audit(`admin:${admin.id}`, "confirm-requirement", `REQ-${requirement.seq}`);
   return apiOk({ ok: true });
 }

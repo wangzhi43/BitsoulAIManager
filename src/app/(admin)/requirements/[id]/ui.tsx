@@ -71,3 +71,55 @@ export function AcceptActions({ id, status, demo }: { id: string; status: string
 
   return null;
 }
+
+export function ManageActions({ id, status, demo }: { id: string; status: string; demo: boolean }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+
+  async function act(action: "close" | "hold" | "resume") {
+    if (demo) {
+      alert("展示模式下操作不生效");
+      return;
+    }
+    const label = action === "close" ? "关闭" : action === "hold" ? "挂起" : "恢复";
+    const note = window.prompt(`${label}原因（可选）`) ?? undefined;
+    if (action === "close" && !window.confirm("确认关闭该需求？进行中的认领会被释放")) return;
+    setBusy(true);
+    const res = await fetch(`/api/admin/requirements/${id}/state`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action, note }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      alert(data?.error?.message ?? "操作失败");
+    }
+    router.refresh();
+    setBusy(false);
+  }
+
+  const terminal = status === "ACCEPTED";
+  return (
+    <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <h2 className="mb-2 text-[13px] font-semibold">管理操作</h2>
+      <div className="flex flex-wrap gap-2">
+        {status !== "CLOSED" && status !== "ON_HOLD" && !terminal && (
+          <>
+            <button disabled={busy} onClick={() => act("hold")} className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">
+              ⏸ 挂起
+            </button>
+            <button disabled={busy} onClick={() => act("close")} className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-600 dark:border-red-900">
+              ✕ 关闭
+            </button>
+          </>
+        )}
+        {(status === "CLOSED" || status === "ON_HOLD") && (
+          <button disabled={busy} onClick={() => act("resume")} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-500">
+            ↻ 恢复
+          </button>
+        )}
+        {terminal && <p className="text-xs text-zinc-400">已验收，无可用操作</p>}
+      </div>
+    </section>
+  );
+}

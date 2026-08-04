@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { apiError, apiOk } from "@/lib/api";
 import { currentAdmin } from "@/lib/auth";
 import { getQueues } from "@/lib/queue";
+import { audit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -51,5 +52,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       { attempts: 3, backoff: { type: "exponential", delay: 10_000 } },
     );
   }
+  await audit(`admin:${admin.id}`, reparse ? "reject-reparse" : "reject-requirement", `REQ-${requirement.seq}`, reason);
   return apiOk({ ok: true, reparsing: reparse });
 }

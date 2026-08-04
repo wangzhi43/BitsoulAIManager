@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 const PatchBody = z.object({
   paused: z.boolean().optional(),
+  pushDailyReport: z.boolean().optional(),
   projectId: z.string().nullable().optional(),
   customerName: z.string().nullable().optional(),
   captureMode: z.enum(["ALL", "MENTION", "HASHTAG"]).optional(),

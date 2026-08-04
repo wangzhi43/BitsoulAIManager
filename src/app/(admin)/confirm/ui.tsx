@@ -87,6 +87,21 @@ export function ConfirmList({ items, projects }: Props) {
     setBusy(null);
   }
 
+  async function clarifyMessage(item: Item) {
+    setBusy(item.id);
+    const res = await fetch(`/api/admin/requirements/${item.id}/clarify-message`, { method: "POST" });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      alert(data?.error?.message ?? "生成失败");
+    } else {
+      try {
+        await navigator.clipboard.writeText(data.message);
+      } catch {}
+      alert(data.sentToWechat ? "已发送到客户微信会话，并复制到剪贴板" : "文案已复制到剪贴板（该需求非微信来源，需手动转发）");
+    }
+    setBusy(null);
+  }
+
   async function mergeSelected() {
     if (selected.length < 2) {
       alert("选择至少两个需求单，第一个所选为合并目标");
@@ -206,8 +221,15 @@ export function ConfirmList({ items, projects }: Props) {
                   </ul>
                   {item.clarifications.length > 0 && (
                     <div className="mt-2 rounded-lg bg-amber-50 p-2.5 text-sm dark:bg-amber-950/40">
-                      <p className="mb-1 text-xs font-medium text-amber-700 dark:text-amber-300">
+                      <p className="mb-1 flex items-center justify-between text-xs font-medium text-amber-700 dark:text-amber-300">
                         待澄清问题
+                        <button
+                          onClick={() => clarifyMessage(item)}
+                          disabled={busy === item.id}
+                          className="rounded-md border border-amber-300 px-2 py-0.5 text-[11px] font-normal hover:bg-amber-100 dark:border-amber-800"
+                        >
+                          生成微信文案并发送
+                        </button>
                       </p>
                       {item.clarifications.map((c, i) => (
                         <p key={i} className="text-amber-800 dark:text-amber-200">

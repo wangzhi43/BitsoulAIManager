@@ -61,6 +61,12 @@ export default async function DashboardPage() {
         </div>
       </header>
 
+      {s.usageAlert && (
+        <div className="mb-3 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+          ⚠ LLM 消耗告警：{s.usageAlert.date} 消耗 {(s.usageAlert.total / 10000).toFixed(1)} 万 tokens，超过上限 {(s.usageAlert.limit / 10000).toFixed(1)} 万（可在设置页调整上限）
+        </div>
+      )}
+
       {/* KPI 行 */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {kpiCards.map((k) => (
@@ -169,8 +175,8 @@ export default async function DashboardPage() {
         </Panel>
       </div>
 
-      {/* 第四行：Agent 排行 + LLM 消耗 */}
-      <div className="mt-3 grid gap-3 lg:grid-cols-3">
+      {/* 第四行：Agent 排行 + LLM 消耗 + 交付质量 */}
+      <div className="mt-3 grid gap-3 lg:grid-cols-2 xl:grid-cols-4">
         <Panel title="Agent 完成量排行" extra={<Link href="/agents" className="text-xs text-indigo-500">管理 →</Link>}>
           {s.agentRank.length > 0 ? (
             <HBarList data={s.agentRank} color={CHART_COLORS[1]} />
@@ -180,6 +186,27 @@ export default async function DashboardPage() {
         </Panel>
         <Panel title="LLM 消耗（近 7 天 · tokens）">
           <VBars data={s.llm7d.byDay} color={CHART_COLORS[0]} valueLabel={fmtWan} />
+        </Panel>
+        <Panel title="交付质量（近 30 天已验收）">
+          {s.quality.samples > 0 ? (
+            <dl className="space-y-3">
+              <div className="flex items-baseline justify-between">
+                <dt className="text-xs text-zinc-400">平均前置时间（流入→验收）</dt>
+                <dd className="text-xl font-semibold tabular-nums">{s.quality.avgLeadHours ?? "—"}<span className="ml-0.5 text-xs font-normal text-zinc-400">h</span></dd>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <dt className="text-xs text-zinc-400">平均开发时长</dt>
+                <dd className="text-xl font-semibold tabular-nums">{s.quality.avgDevHours ?? "—"}<span className="ml-0.5 text-xs font-normal text-zinc-400">h</span></dd>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <dt className="text-xs text-zinc-400">返工率（测试打回）</dt>
+                <dd className="text-xl font-semibold tabular-nums">{s.quality.reworkRate ?? "—"}<span className="ml-0.5 text-xs font-normal text-zinc-400">%</span></dd>
+              </div>
+              <p className="text-[10px] text-zinc-300 dark:text-zinc-600">样本：{s.quality.samples} 个已验收需求</p>
+            </dl>
+          ) : (
+            <p className="py-4 text-center text-xs text-zinc-400">暂无已验收需求</p>
+          )}
         </Panel>
         <Panel title="消耗构成（按专家角色）">
           {s.llm7d.byRole.length > 0 ? (

@@ -316,14 +316,16 @@ model DailyBranch {
 // ---------- 微信 ----------
 
 model WechatBinding {
-  id           String            @id @default(cuid())
-  convId       String            @unique // 微信会话标识（群/好友）
-  convName     String?
-  projectId    String? // 默认归属项目；空则由产品专家判断
-  customerName String?
-  captureMode  WechatCaptureMode @default(ALL)
-  paused       Boolean           @default(false)
-  createdAt    DateTime          @default(now())
+  id              String            @id @default(cuid())
+  convId          String            @unique // 微信会话标识（群/好友）
+  convName        String?
+  projectId       String? // 默认归属项目；空则由产品专家判断
+  customerName    String?
+  captureMode     WechatCaptureMode @default(ALL)
+  paused          Boolean           @default(false)
+  /// 勾选后该会话接收项目日报推送（负责人通道）
+  pushDailyReport Boolean           @default(false)
+  createdAt       DateTime          @default(now())
 
   project Project? @relation(fields: [projectId], references: [id])
 }
@@ -385,6 +387,18 @@ model DailyReport {
   project Project @relation(fields: [projectId], references: [id])
 
   @@unique([projectId, date])
+}
+
+/// 操作审计（P1 #40）：关键管理操作留痕
+model AuditLog {
+  id        String   @id @default(cuid())
+  actor     String // admin:<id> / system
+  action    String // confirm-requirement / merge-branch / update-provider / ...
+  target    String? // REQ-12 / project:xxx / agent:xxx
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 model SystemConfig {

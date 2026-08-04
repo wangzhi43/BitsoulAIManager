@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { apiError, apiOk } from "@/lib/api";
 import { currentAdmin } from "@/lib/auth";
 import { encryptSecret } from "@/lib/crypto";
+import { audit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -55,5 +56,7 @@ export async function POST(req: NextRequest) {
       models: d.models,
     },
   });
+  const adminUser = await currentAdmin();
+  await audit(`admin:${adminUser?.id}`, "create-llm-provider", d.name, d.kind);
   return apiOk({ id: p.id }, 201);
 }

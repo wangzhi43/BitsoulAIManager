@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { isDemoMode, DEMO_REQ_DETAIL } from "@/lib/demo";
 import { StatusChip, PriorityChip } from "@/components/status";
-import { AcceptActions } from "./ui";
+import { AcceptActions, ManageActions } from "./ui";
 
 export const dynamic = "force-dynamic";
 
@@ -134,6 +134,7 @@ export default async function RequirementDetailPage({ params }: { params: Promis
 
         <div className="space-y-3">
           <AcceptActions id={d.id} status={d.status} demo={demo} />
+          <ManageActions id={d.id} status={d.status} demo={demo} />
 
           <section className={box}>
             <h2 className="mb-2 text-[13px] font-semibold">交付信息</h2>

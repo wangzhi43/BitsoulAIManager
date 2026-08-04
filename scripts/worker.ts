@@ -56,9 +56,38 @@ const llmWorker = new Worker<LlmJob>(
       case "gen-test-tasks":
         await genTestTasks(job.data.requirementId);
         return;
-      case "daily-report":
+      case "daily-report": {
         await generateDailyReport(job.data.projectId, job.data.date);
+        // 推送到勾选了日报的微信会话（PRD #36）
+        const proj = await prisma.project.findUnique({ where: { id: job.data.projectId } });
+        const dayStart = new Date(job.data.date); dayStart.setHours(0, 0, 0, 0);
+        const rep = await prisma.dailyReport.findUnique({
+          where: { projectId_date: { projectId: job.data.projectId, date: dayStart } },
+        });
+        const receivers = await prisma.wechatBinding.findMany({
+          where: { projectId: job.data.projectId, pushDailyReport: true, paused: false },
+        });
+        if (proj && rep && receivers.length > 0) {
+          const c = rep.content as { done: string[]; inProgress: string[]; blocked: string[]; forecast: string; risks: string[] };
+          const text = [
+            `【${proj.name}】${dayStart.toISOString().slice(0, 10)} 进度日报`,
+            c.done.length ? `✅ 今日完成
+${c.done.map((x) => `· ${x}`).join("\n")}` : "",
+            c.inProgress.length ? `⚙️ 进行中
+${c.inProgress.map((x) => `· ${x}`).join("\n")}` : "",
+            c.blocked.length ? `⚠️ 受阻
+${c.blocked.map((x) => `· ${x}`).join("\n")}` : "",
+            `📅 明日预测：${c.forecast}`,
+            c.risks.length ? `❗ 风险：${c.risks.join("；")}` : "",
+          ].filter(Boolean).join("\n\n");
+          for (const b of receivers) {
+            await prisma.wechatOutbox.create({ data: { convId: b.convId, content: text } });
+          }
+          await prisma.dailyReport.update({ where: { id: rep.id }, data: { pushed: true } });
+          logger.info({ project: proj.name, receivers: receivers.length }, "daily report queued to wechat");
+        }
         return;
+      }
     }
   },
   { connection, concurrency: 3 },
@@ -131,6 +160,22 @@ const gitWorker = new Worker<GitJob>(
       case "merge-daily-to-main":
         await mergeDailyToMain(job.data.dailyBranchId);
         return;
+      case "write-repo-file": {
+        const proj = await prisma.project.findUniqueOrThrow({ where: { id: job.data.projectId } });
+        const latestDaily = await prisma.dailyBranch.findFirst({
+          where: { projectId: proj.id },
+          orderBy: { date: "desc" },
+        });
+        await commitFileToBranch(
+          proj.id,
+          latestDaily?.name ?? proj.mainBranch,
+          `${proj.docsDir}/${job.data.file}`,
+          job.data.content,
+          `docs: update ${job.data.file}`,
+          false,
+        );
+        return;
+      }
       case "append-docs-log": {
         const project = await prisma.project.findUniqueOrThrow({ where: { id: job.data.projectId } });
         const daily = await prisma.dailyBranch.findFirst({
@@ -203,8 +248,31 @@ const cronWorker = new Worker(
         }
         return;
       }
+      case "usage-rollup": {
+        const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
+        const yStart = new Date(dayStart.getTime() - 86400_000);
+        const agg = await prisma.llmUsageLog.aggregate({
+          _sum: { inputTokens: true, outputTokens: true },
+          where: { createdAt: { gte: yStart, lt: dayStart } },
+        });
+        const total = (agg._sum.inputTokens ?? 0) + (agg._sum.outputTokens ?? 0);
+        const limitRow = await prisma.systemConfig.findUnique({ where: { key: "dailyTokenLimit" } });
+        const limit = limitRow ? Number(limitRow.value) : 0;
+        if (limit > 0 && total > limit) {
+          await prisma.systemConfig.upsert({
+            where: { key: "usageAlert" },
+            update: { value: JSON.stringify({ date: yStart.toISOString().slice(0, 10), total, limit }) },
+            create: { key: "usageAlert", value: JSON.stringify({ date: yStart.toISOString().slice(0, 10), total, limit }) },
+          });
+          await prisma.auditLog.create({
+            data: { actor: "system", action: "usage-limit-exceeded", detail: `昨日 ${total.toLocaleString()} tokens，超过上限 ${limit.toLocaleString()}` },
+          });
+          logger.warn({ total, limit }, "daily token usage exceeded limit");
+        }
+        logger.info({ total }, "usage rollup done");
+        return;
+      }
       default:
-        // 其余 cron 在对应里程碑接入（M3 分支 / M3 排序 / M5 日报与用量）
         logger.info({ name: job.name }, "cron handler not yet implemented");
     }
   },

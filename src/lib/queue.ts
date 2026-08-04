@@ -18,7 +18,8 @@ export type GitJob =
   | { kind: "create-feature-branch"; requirementId: string }
   | { kind: "merge-feature-to-daily"; requirementId: string }
   | { kind: "merge-daily-to-main"; dailyBranchId: string }
-  | { kind: "append-docs-log"; projectId: string; file: string; content: string };
+  | { kind: "append-docs-log"; projectId: string; file: string; content: string }
+  | { kind: "write-repo-file"; projectId: string; file: string; content: string };
 
 export function createRedis() {
   return new IORedis(config.redisUrl, { maxRetriesPerRequest: null });

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { apiError, apiOk } from "@/lib/api";
 import { currentAdmin } from "@/lib/auth";
+import { audit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         content: `\n- ${new Date().toISOString().slice(0, 10)} **已验收** REQ-${r.seq} ${r.title}\n`,
       });
     }
+    await audit(actor, "accept-requirement", `REQ-${r.seq}`, note);
     return apiOk({ ok: true });
   }
 
@@ -67,5 +69,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       }),
     ]);
   }
+  await audit(actor, action === "approve_partial" ? "approve-partial" : "send-back", `REQ-${r.seq}`, note);
   return apiOk({ ok: true });
 }

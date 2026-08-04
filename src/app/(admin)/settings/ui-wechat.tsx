@@ -11,6 +11,7 @@ interface Binding {
   customerName: string | null;
   captureMode: string;
   paused: boolean;
+  pushDailyReport: boolean;
 }
 
 const input =
@@ -99,6 +100,18 @@ export function WechatSection({
                 <option value="HASHTAG">#需求 触发</option>
                 <option value="MENTION">@ 触发</option>
               </select>
+              <button
+                disabled={busy}
+                onClick={() => patch(b.id, { pushDailyReport: !b.pushDailyReport })}
+                className={`rounded-lg border px-2 py-1.5 text-xs ${
+                  b.pushDailyReport
+                    ? "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300"
+                    : "border-zinc-300 text-zinc-500 dark:border-zinc-700"
+                }`}
+                title="勾选后该会话每晚接收项目日报"
+              >
+                {b.pushDailyReport ? "📩 接收日报" : "日报推送：关"}
+              </button>
               <input
                 className={input}
                 placeholder="客户名"

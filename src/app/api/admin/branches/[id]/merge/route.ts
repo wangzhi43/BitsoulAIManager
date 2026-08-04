@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { apiError, apiOk } from "@/lib/api";
 import { currentAdmin } from "@/lib/auth";
 import { getQueues } from "@/lib/queue";
+import { audit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -30,5 +31,6 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     { kind: "merge-daily-to-main", dailyBranchId: id },
     { attempts: 2, backoff: { type: "exponential", delay: 20_000 } },
   );
+  await audit(`admin:${admin.id}`, "merge-daily-to-main", daily.name);
   return apiOk({ ok: true, queued: true });
 }

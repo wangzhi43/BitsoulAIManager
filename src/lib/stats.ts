@@ -27,6 +27,8 @@ export interface DashboardStats {
   recentEvents: { seq: number; title: string; note: string; actor: string; at: Date }[];
   botLastSeen: string | null;
   agentActive: number;
+  quality: { avgLeadHours: number | null; avgDevHours: number | null; reworkRate: number | null; samples: number };
+  usageAlert: { date: string; total: number; limit: number } | null;
 }
 
 function dayKey(d: Date): string {
@@ -41,7 +43,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
-  const [statusCounts, projects, reqEvents14, conflicts, agents, llmLogs, recent, botSeen, agentActive] =
+  const [statusCounts, projects, reqEvents14, conflicts, agents, llmLogs, recent, botSeen, agentActive, acceptedReqs, alertRow] =
     await Promise.all([
       prisma.requirement.groupBy({ by: ["projectId", "status"], _count: true }),
       prisma.project.findMany({ orderBy: { createdAt: "asc" } }),
@@ -65,6 +67,12 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       }),
       prisma.systemConfig.findUnique({ where: { key: "wechatBotLastSeen" } }),
       prisma.agentAccount.count({ where: { enabled: true, lastSeenAt: { gte: new Date(Date.now() - 3600_000) } } }),
+      prisma.requirement.findMany({
+        where: { status: "ACCEPTED", updatedAt: { gte: new Date(Date.now() - 30 * 86400_000) } },
+        include: { events: { select: { toStatus: true, createdAt: true } } },
+        take: 100,
+      }),
+      prisma.systemConfig.findUnique({ where: { key: "usageAlert" } }),
     ]);
 
   const countBy = (statuses: string[], projectId?: string) =>
@@ -157,5 +165,34 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     })),
     botLastSeen: botSeen?.value ?? null,
     agentActive,
+    quality: (() => {
+      const leads: number[] = [];
+      const devs: number[] = [];
+      let rework = 0;
+      for (const r of acceptedReqs) {
+        const first = r.events[0]?.createdAt ?? r.createdAt;
+        const accepted = r.events.filter((e) => e.toStatus === "ACCEPTED").at(-1)?.createdAt;
+        const devStart = r.events.find((e) => e.toStatus === "DEVELOPING")?.createdAt;
+        const testStart = r.events.find((e) => e.toStatus === "PENDING_TEST")?.createdAt;
+        if (accepted) leads.push((accepted.getTime() - first.getTime()) / 3600_000);
+        if (devStart && testStart) devs.push((testStart.getTime() - devStart.getTime()) / 3600_000);
+        // 返工：测试失败回池（TESTING/REVIEWING → READY）
+        if (r.events.some((e, i) => e.toStatus === "READY" && i > 0 && ["TESTING", "REVIEWING"].includes(r.events[i - 1]?.toStatus ?? ""))) rework++;
+      }
+      const avg = (a: number[]) => (a.length ? Math.round((a.reduce((x, y) => x + y, 0) / a.length) * 10) / 10 : null);
+      return {
+        avgLeadHours: avg(leads),
+        avgDevHours: avg(devs),
+        reworkRate: acceptedReqs.length ? Math.round((rework / acceptedReqs.length) * 100) : null,
+        samples: acceptedReqs.length,
+      };
+    })(),
+    usageAlert: (() => {
+      try {
+        return alertRow ? (JSON.parse(alertRow.value) as { date: string; total: number; limit: number }) : null;
+      } catch {
+        return null;
+      }
+    })(),
   };
 }

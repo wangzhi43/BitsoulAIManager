@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { apiError, apiOk } from "@/lib/api";
 import { currentAdmin, hashPassword, verifyPassword } from "@/lib/auth";
+import { audit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -24,5 +25,6 @@ export async function POST(req: NextRequest) {
     where: { id: admin.id },
     data: { passwordHash: await hashPassword(parsed.data.newPassword) },
   });
+  await audit(`admin:${admin.id}`, "change-password");
   return apiOk({ ok: true });
 }
