@@ -4,14 +4,16 @@
 MVP 代码全部完成（M1-M6），等待：服务器部署（docs/DEPLOY.md）+ 端到端验收 + 微信群限制的产品决策（ADR-002）。
 
 ## 步骤
-- [ ] 服务器部署：按 docs/DEPLOY.md 执行（管理员提供服务器操作或授权）
-- [ ] 三个被管理项目的 GitHub 仓库确认/创建（wangzhi43 账号下，建议私有）+ bot PAT 生成
-- [ ] 微信桥接部署到跑 OpenClaw 的机器 + 扫码绑定
+- [ ] 管理员：登录 https://pm.bitsouls.cn 修改初始密码、配置 LLM 供应商与三个专家角色模型
+- [ ] 管理员：生成 GitHub fine-grained PAT（三个业务仓库 Contents 读写）→ 填入服务器 /opt/bitsoul-pm/.env 的 GITHUB_BOT_PAT 并 docker compose restart
+- [ ] 三个被管理项目 push 到 GitHub（wangzhi43 下，建议私有）并在平台设置页启用
+- [ ] 微信桥接部署到跑 OpenClaw 的机器 + 扫码绑定（bridge/README）
 - [ ] 端到端 MVP 验收（DEPLOY.md §8 / PRD §6）
 - [ ] 管理员决策：微信群采集方案（企微 / wechaty / 维持单聊+手动导入，见 ADR-002）
 - [ ] P1 功能排期（微信日报推送、体验包、cherry-pick、完整统计、SSE）
 
 ## 已完成
+- [x] 2026-08-04 生产部署上线 https://pm.bitsouls.cn：阿里云 ECS（47.103.29.184，云助手通道）、Docker 化四容器、pm 子域 DNS + Let's Encrypt HTTPS（acme.sh 自动续期）、migrate + seed、健康检查与管理员登录 API 全部通过；部署中修复三坑（全局 gitignore 吞 scripts/、Debian 官方源过慢改参数化阿里镜像、空 public 目录未入库）
 - [x] M3 任务池与 Git 自动化：Git 服务（daily/feature/合并/冲突检测）、项管排序 Agent、Agent API 全套、账号管理、AGENT_GUIDE
 - [x] M4 测试闭环：测试专家出题、报告提交+入仓、自动审核（全过→待验收/失败→回池提优先级/部分→人工裁决）
 - [x] M5 看板与收尾：日报生成+报告页、docs 自动写入、分支审查+一键合并、任务池页+优先级锁、Agent 看板、导航+自动刷新
