@@ -1,0 +1,65 @@
+# 部署形态见 docs/TECH_DESIGN.md §9 与 ADR-001：
+# 服务绑 127.0.0.1，服务器 Nginx 反代 pm.bitsouls.cn → 127.0.0.1:3100 并终止 TLS
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3100:3100"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://bsam:${POSTGRES_PASSWORD}@postgres:5432/bsam
+      REDIS_URL: redis://redis:6379
+    volumes:
+      - uploads:/data/uploads
+      - repos:/data/repos
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  worker:
+    build: .
+    restart: unless-stopped
+    command: ["npx", "tsx", "scripts/worker.ts"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://bsam:${POSTGRES_PASSWORD}@postgres:5432/bsam
+      REDIS_URL: redis://redis:6379
+    volumes:
+      - uploads:/data/uploads
+      - repos:/data/repos
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bsam
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: bsam
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bsam"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+
+volumes:
+  pgdata:
+  redisdata:
+  uploads:
+  repos:

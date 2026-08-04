@@ -1,0 +1,377 @@
+// BitSoul AI Manager — 数据模型
+// 对应 docs/TECH_DESIGN.md §3；变更需先改文档再改 schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- 枚举 ----------
+
+enum SourceChannel {
+  WECHAT
+  MANUAL
+  WEB_FORM
+  REALTIME
+}
+
+enum Complexity {
+  S
+  M
+  L
+}
+
+enum Priority {
+  P0
+  P1
+  P2
+  P3
+}
+
+/// 需求单状态机（PRD §3.1）
+enum ReqStatus {
+  INBOX // 采集箱
+  PARSING // 拆解中
+  PENDING_CONFIRM // 待确认
+  READY // 待开发
+  DEVELOPING // 开发中
+  PENDING_TEST // 待测试
+  TESTING // 测试中
+  TESTED // 测试完成
+  REVIEWING // 审核中
+  PENDING_ACCEPT // 待验收
+  ACCEPTED // 已验收
+  CLOSED // 已关闭
+  ON_HOLD // 挂起
+}
+
+enum TaskStatus {
+  POOL // 池中待认领
+  CLAIMED // 已认领
+  SUBMITTED // 已提交
+  MERGED // 已合并（开发任务）
+  CONFLICT // 合并冲突待人工
+  DONE // 完成（测试任务报告已提交）
+}
+
+enum ReportConclusion {
+  PASS
+  FAIL
+  BLOCKED
+}
+
+enum AgentRole {
+  DEVELOPER
+  TESTER
+  BOTH
+}
+
+enum ProviderKind {
+  ANTHROPIC_SDK
+  OPENAI_COMPAT
+}
+
+/// 平台内置专家 Agent 角色
+enum ExpertRole {
+  PRODUCT // 产品专家：需求拆解
+  PM // 项目管理专家：优先级/日报
+  TEST // 测试专家：测试任务生成
+}
+
+enum WechatCaptureMode {
+  ALL // 全量采集
+  MENTION // @机器人触发
+  HASHTAG // #需求 标记触发
+}
+
+// ---------- 项目与用户 ----------
+
+model Project {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  repoUrl      String // GitHub 仓库地址（HTTPS 或 SSH）
+  mainBranch   String   @default("main")
+  buildCommand String? // 体验包构建命令（P1）
+  docsDir      String   @default("docs")
+  description  String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  wechatBindings WechatBinding[]
+  requirements   Requirement[]
+  dailyBranches  DailyBranch[]
+  dailyReports   DailyReport[]
+}
+
+model AdminUser {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  passwordHash String
+  displayName  String
+  enabled      Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  lastLoginAt  DateTime?
+}
+
+model AgentAccount {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  passwordHash String
+  role         AgentRole
+  projectIds   String[] // 可访问项目 id 列表
+  enabled      Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  lastSeenAt   DateTime?
+
+  tokens    AgentToken[]
+  devTasks  DevTask[]
+  testTasks TestTask[]
+}
+
+model AgentToken {
+  id        String    @id @default(cuid())
+  agentId   String
+  tokenHash String    @unique // SHA-256(token)
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  agent AgentAccount @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId])
+}
+
+// ---------- 需求 ----------
+
+model RequirementSource {
+  id           String        @id @default(cuid())
+  channel      SourceChannel
+  wechatConvId String? // 微信会话标识
+  senderName   String?
+  customerName String? // MVP 先记名字，P1 建 Customer 表
+  threadId     String        @unique // 聚合窗口产生的需求线索 id
+  rawMessages  Json // [{msgId, type, text?, attachmentId?, ts}]
+  createdAt    DateTime      @default(now())
+
+  attachments  Attachment[]
+  requirements Requirement[]
+}
+
+model Requirement {
+  id             String     @id @default(cuid())
+  seq            Int        @unique @default(autoincrement()) // 展示为 REQ-<seq>
+  projectId      String
+  sourceId       String
+  title          String
+  userStory      String
+  acceptance     Json // string[] 验收标准
+  complexity     Complexity @default(M)
+  moduleGuess    String?
+  priority       Priority?
+  priorityLocked Boolean    @default(false)
+  priorityReason String?
+  poolRank       Int? // 池内相对顺序（项管 Agent 写入）
+  status         ReqStatus  @default(PENDING_CONFIRM)
+  clarifications Json? // [{question, answer?}]
+  featureBranch  String? // feature/REQ-<seq>
+  dailyBranchId  String?
+  parentId       String? // 缺陷任务指向原需求
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  project     Project           @relation(fields: [projectId], references: [id])
+  source      RequirementSource @relation(fields: [sourceId], references: [id])
+  dailyBranch DailyBranch?      @relation(fields: [dailyBranchId], references: [id])
+  parent      Requirement?      @relation("DefectOrigin", fields: [parentId], references: [id])
+  defects     Requirement[]     @relation("DefectOrigin")
+  devTask     DevTask?
+  testTasks   TestTask[]
+  events      ReqEvent[]
+
+  @@index([projectId, status])
+}
+
+model ReqEvent {
+  id            String   @id @default(cuid())
+  requirementId String
+  fromStatus    String?
+  toStatus      String
+  actor         String // admin:<id> / agent:<id> / system / expert:<role>
+  note          String?
+  createdAt     DateTime @default(now())
+
+  requirement Requirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+
+  @@index([requirementId])
+}
+
+model Attachment {
+  id       String  @id @default(cuid())
+  sourceId String?
+  filename String
+  mime     String
+  size     Int
+  sha256   String
+  path     String // 本地存储路径（/data/uploads/...）
+
+  createdAt DateTime           @default(now())
+  source    RequirementSource? @relation(fields: [sourceId], references: [id])
+}
+
+// ---------- 任务 ----------
+
+model DevTask {
+  id            String     @id @default(cuid())
+  requirementId String     @unique
+  status        TaskStatus @default(POOL)
+  claimedById   String?
+  claimedAt     DateTime?
+  lastHeartbeat DateTime?
+  submittedAt   DateTime?
+  submitNote    String?
+  selfTest      String?
+  commits       Json? // string[] commit shas
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  requirement Requirement   @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  claimedBy   AgentAccount? @relation(fields: [claimedById], references: [id])
+
+  @@index([status])
+}
+
+model TestTask {
+  id            String     @id @default(cuid())
+  requirementId String
+  cases         Json // [{step, expected, tag}]
+  tags          String[]
+  priority      Priority   @default(P2)
+  status        TaskStatus @default(POOL)
+  claimedById   String?
+  claimedAt     DateTime?
+  lastHeartbeat DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  requirement Requirement   @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  claimedBy   AgentAccount? @relation(fields: [claimedById], references: [id])
+  report      TestReport?
+
+  @@index([status])
+}
+
+model TestReport {
+  id           String           @id @default(cuid())
+  testTaskId   String           @unique
+  results      Json // [{caseIdx, pass, note}]
+  passRate     Float
+  conclusion   ReportConclusion
+  defects      Json?
+  repoFilePath String? // 写入仓库的 docs/test-reports/ 路径
+  createdAt    DateTime         @default(now())
+
+  testTask TestTask @relation(fields: [testTaskId], references: [id], onDelete: Cascade)
+}
+
+// ---------- Git ----------
+
+model DailyBranch {
+  id            String    @id @default(cuid())
+  projectId     String
+  name          String // daily/20260803
+  date          DateTime
+  mergedToMain  Boolean   @default(false)
+  mergedAt      DateTime?
+  reviewSummary Json? // 分支审查页缓存：按需求分组的 diff 摘要
+  createdAt     DateTime  @default(now())
+
+  project      Project       @relation(fields: [projectId], references: [id])
+  requirements Requirement[]
+
+  @@unique([projectId, name])
+}
+
+// ---------- 微信 ----------
+
+model WechatBinding {
+  id           String            @id @default(cuid())
+  convId       String            @unique // 微信会话标识（群/好友）
+  convName     String?
+  projectId    String? // 默认归属项目；空则由产品专家判断
+  customerName String?
+  captureMode  WechatCaptureMode @default(ALL)
+  paused       Boolean           @default(false)
+  createdAt    DateTime          @default(now())
+
+  project Project? @relation(fields: [projectId], references: [id])
+}
+
+model WechatOutbox {
+  id        String    @id @default(cuid())
+  convId    String
+  content   String
+  createdAt DateTime  @default(now())
+  sentAt    DateTime? // Bot 取走并 ACK 后写入
+
+  @@index([sentAt])
+}
+
+// ---------- LLM ----------
+
+model LlmProvider {
+  id        String       @id @default(cuid())
+  name      String       @unique // anthropic / deepseek / qwen / ...
+  kind      ProviderKind
+  baseUrl   String?
+  apiKeyEnc String // AES-256-GCM 密文
+  models    Json // string[] 可用模型
+  enabled   Boolean      @default(true)
+  createdAt DateTime     @default(now())
+}
+
+model AgentRoleModelConfig {
+  role       ExpertRole @id
+  providerId String
+  model      String
+  effort     String? // anthropic: low/medium/high/xhigh
+}
+
+model LlmUsageLog {
+  id            String   @id @default(cuid())
+  providerName  String
+  model         String
+  expertRole    String?
+  projectId     String?
+  requirementId String?
+  inputTokens   Int
+  outputTokens  Int
+  createdAt     DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// ---------- 报告与配置 ----------
+
+model DailyReport {
+  id        String   @id @default(cuid())
+  projectId String
+  date      DateTime
+  content   Json // {done[], inProgress[], blocked[], forecast, risks}
+  pushed    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@unique([projectId, date])
+}
+
+model SystemConfig {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
