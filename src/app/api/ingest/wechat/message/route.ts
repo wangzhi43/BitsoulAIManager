@@ -32,9 +32,16 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return apiError("bad_request", parsed.error.message);
   const m = parsed.data;
 
-  // 白名单：只接受已绑定且未暂停的会话
+  // 白名单：只接受已绑定且未暂停的会话；
+  // 未绑定的会话自动登记为 paused 绑定，供管理员在设置页启用（免去手抄 convId）
   const binding = await prisma.wechatBinding.findUnique({ where: { convId: m.convId } });
-  if (!binding || binding.paused) return apiOk({ accepted: false, reason: "conv not bound or paused" });
+  if (!binding) {
+    await prisma.wechatBinding.create({
+      data: { convId: m.convId, convName: m.convName, paused: true },
+    });
+    return apiOk({ accepted: false, reason: "conv registered, pending admin activation" });
+  }
+  if (binding.paused) return apiOk({ accepted: false, reason: "conv paused" });
 
   await prisma.inboxMessage.upsert({
     where: { msgId: m.msgId },

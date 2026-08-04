@@ -311,6 +311,8 @@ Prompt 模板存 `src/lib/llm/prompts/`（版本入库便于回溯），遵循�
 
 ## 7. 微信接入设计（OpenClaw Bot）
 
+> **实现更新（2026-08-04，ADR-002）**：调研确认 OpenClaw 微信通道为腾讯 iLink 官方机器人接口——合规性好（非逆向协议），但**仅支持单聊、不支持微信群**，且主动推送依赖对方先来消息（context token）。插件桥已按下述方案实现于 `bridge/openclaw-plugin-bitsoul-pm/`；未绑定会话首次来消息自动登记为暂停态绑定。群聊如为硬需求见 ADR-002 的备选项。
+
 ```
 微信消息 → OpenClaw(本地终端) → [openclaw-plugin: bitsoul-pm-bridge] → HTTPS POST /api/ingest/wechat/*
 平台推送(日报/告警/澄清文案) → POST OpenClaw 本地回调端口 → Bot 发送微信消息

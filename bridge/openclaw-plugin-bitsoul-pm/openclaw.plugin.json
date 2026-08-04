@@ -1,0 +1,11 @@
+{
+  "id": "bitsoul-pm-bridge",
+  "activation": { "onStartup": true },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {
+      "enabled": { "type": "boolean" }
+    }
+  }
+}
