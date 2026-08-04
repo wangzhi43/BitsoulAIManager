@@ -35,6 +35,15 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         data: { requirementId: id, fromStatus: "PENDING_ACCEPT", toStatus: "ACCEPTED", actor, note: note ?? "验收通过" },
       }),
     ]);
+    if (r.projectId) {
+      const { getQueues } = await import("@/lib/queue");
+      await getQueues().git.add("append-docs-log", {
+        kind: "append-docs-log",
+        projectId: r.projectId,
+        file: "requirements-log.md",
+        content: `\n- ${new Date().toISOString().slice(0, 10)} **已验收** REQ-${r.seq} ${r.title}\n`,
+      });
+    }
     return apiOk({ ok: true });
   }
 

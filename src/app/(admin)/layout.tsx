@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AutoRefresh } from "@/components/AutoRefresh";
 import { redirect } from "next/navigation";
 import { currentAdmin } from "@/lib/auth";
 
@@ -12,12 +13,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const tabs = [
     { href: "/dashboard", label: "看板", icon: "▦" },
     { href: "/confirm", label: "确认", icon: "✓" },
-    { href: "/inbox", label: "采集箱", icon: "⇩" },
-    { href: "/settings", label: "设置", icon: "⚙" },
+    { href: "/pools", label: "任务池", icon: "≡" },
+    { href: "/branches", label: "分支", icon: "⑂" },
+    { href: "/more", label: "更多", icon: "⋯" },
   ];
 
   return (
     <div className="pb-20">
+      <AutoRefresh />
       {children}
       <nav className="fixed inset-x-0 bottom-0 border-t border-zinc-200 bg-white/95 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95">
         <div className="mx-auto flex max-w-3xl">

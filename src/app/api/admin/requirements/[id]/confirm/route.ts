@@ -46,5 +46,12 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   ]);
 
   await getQueues().llm.add("rank-pool", { kind: "rank-pool", projectId });
+  // requirements-log 自动写入（PRD §3.7）
+  await getQueues().git.add("append-docs-log", {
+    kind: "append-docs-log",
+    projectId,
+    file: "requirements-log.md",
+    content: `\n## ${new Date().toISOString().slice(0, 10)} 新增 REQ-${requirement.seq} ${requirement.title}\n- 用户故事：${requirement.userStory.split("\n")[0]}\n- 复杂度：${requirement.complexity}\n`,
+  });
   return apiOk({ ok: true });
 }
