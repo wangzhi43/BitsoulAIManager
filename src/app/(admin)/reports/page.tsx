@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { isDemoMode, DEMO } from "@/lib/demo";
+import { PageShell, PageHeader } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -38,9 +39,9 @@ export default async function ReportsPage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-5 sm:px-6">
-      <h1 className="mb-4 text-2xl font-semibold tracking-tight">每日进度报告</h1>
-      <div className="space-y-4">
+    <PageShell>
+      <PageHeader title="每日进度报告" subtitle="项管专家每晚 21:00 按项目自动生成" />
+      <div className="grid gap-3 2xl:grid-cols-2">
         {rows.map((r) => (
           <article
             key={r.id}
@@ -96,6 +97,6 @@ export default async function ReportsPage() {
           </p>
         )}
       </div>
-    </main>
+    </PageShell>
   );
 }

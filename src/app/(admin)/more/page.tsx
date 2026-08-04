@@ -15,8 +15,8 @@ export default async function MorePage() {
     { href: "/settings", label: "设置", desc: "项目、LLM 供应商、专家模型、微信采集", icon: "⚙" },
   ];
   return (
-    <main className="mx-auto max-w-3xl px-4 py-5 sm:px-6">
-      <h1 className="mb-4 text-2xl font-semibold tracking-tight">更多</h1>
+    <main className="mx-auto max-w-4xl px-4 py-5 sm:px-6">
+      <h1 className="mb-4 text-xl font-semibold tracking-tight">更多</h1>
       <div className="space-y-3">
         <DemoToggle on={demo} />
         <ul className="space-y-2.5">

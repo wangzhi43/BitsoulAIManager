@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { isDemoMode, DEMO } from "@/lib/demo";
 import { MergeButton } from "./ui";
+import { PageShell, PageHeader, StatStrip } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -70,10 +71,23 @@ export default async function BranchesPage() {
     }));
   }
 
+  const unmerged = rows.filter((b) => !b.mergedToMain).length;
+  const conflictCount = rows.reduce((s2, b) => s2 + b.requirements.filter((r) => r.conflict).length, 0);
+  const readyReqs = rows
+    .filter((b) => !b.mergedToMain)
+    .reduce((s2, b) => s2 + b.requirements.filter((r) => MERGED_STATUSES.includes(r.status)).length, 0);
+
   return (
-    <main className="mx-auto max-w-3xl px-4 py-5 sm:px-6">
-      <h1 className="mb-4 text-2xl font-semibold tracking-tight">分支审查</h1>
-      <div className="space-y-4">
+    <PageShell>
+      <PageHeader title="分支审查" subtitle="每晚检查当日分支的变更与测试结论，确认后合并回 main" />
+      <StatStrip
+        items={[
+          { label: "待合并分支", value: unmerged, tone: unmerged > 0 ? "indigo" : "default", sub: "今晚需要审查" },
+          { label: "已并入需求", value: readyReqs, sub: "在待合并分支中" },
+          { label: "合并冲突", value: conflictCount, tone: conflictCount > 0 ? "red" : "green", sub: conflictCount > 0 ? "解决后才能合并" : "一切正常" },
+        ]}
+      />
+      <div className="grid gap-3 2xl:grid-cols-2">
         {rows.map((b) => {
           const hasConflict = b.requirements.some((r) => r.conflict);
           const mergedCount = b.requirements.filter((r) => MERGED_STATUSES.includes(r.status)).length;
@@ -145,6 +159,6 @@ export default async function BranchesPage() {
           </p>
         )}
       </div>
-    </main>
+    </PageShell>
   );
 }

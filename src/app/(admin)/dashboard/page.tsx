@@ -3,6 +3,7 @@ import { currentAdmin } from "@/lib/auth";
 import { isDemoMode, DEMO_STATS } from "@/lib/demo";
 import { getDashboardStats, type DashboardStats } from "@/lib/stats";
 import { Sparkline, AreaTrend, Donut, VBars, HBarList, CHART_COLORS } from "@/components/charts";
+import { PageShell } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,7 @@ export default async function DashboardPage() {
   ];
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-5 sm:px-6">
+    <PageShell>
       {/* 头部 */}
       <header className="mb-4 flex flex-wrap items-end justify-between gap-2">
         <div>
@@ -196,6 +197,6 @@ export default async function DashboardPage() {
           )}
         </Panel>
       </div>
-    </main>
+    </PageShell>
   );
 }

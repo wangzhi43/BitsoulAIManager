@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/db";
 import { isDemoMode, DEMO } from "@/lib/demo";
 import { AgentAdmin } from "./ui";
+import { PageShell, PageHeader, StatStrip, Panel } from "@/components/ui";
+import { Donut, HBarList, CHART_COLORS } from "@/components/charts";
 
 export const dynamic = "force-dynamic";
 
@@ -72,10 +74,32 @@ export default async function AgentsPage() {
     }));
   }
 
-  return (
-    <main className="mx-auto max-w-3xl space-y-6 px-4 py-5 sm:px-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Agent</h1>
+  const enabled = rows.filter((a) => a.enabled).length;
+  const activeNow = rows.filter((a) => a.lastSeenAt && Date.now() - new Date(a.lastSeenAt).getTime() < 3600_000).length;
+  const working = rows.filter((a) => a.current.length > 0).length;
+  const byRole = [
+    { name: "开发", value: rows.filter((a) => a.role === "DEVELOPER").length, color: CHART_COLORS[0] },
+    { name: "测试", value: rows.filter((a) => a.role === "TESTER").length, color: CHART_COLORS[1] },
+    { name: "全能", value: rows.filter((a) => a.role === "BOTH").length, color: CHART_COLORS[2] },
+  ].filter((x) => x.value > 0);
+  const rank = rows
+    .map((a) => ({ label: a.username, value: a.devCount + a.testCount, hint: ROLE_LABEL[a.role] }))
+    .sort((x, y) => y.value - x.value)
+    .slice(0, 6);
 
+  return (
+    <PageShell>
+      <PageHeader title="Agent" subtitle="外部终端智能体的账号、当前任务与产出" />
+      <StatStrip
+        items={[
+          { label: "账号总数", value: rows.length, sub: `${enabled} 个启用` },
+          { label: "1 小时内活跃", value: activeNow, tone: "green", sub: "有心跳/请求" },
+          { label: "执行中", value: working, tone: working > 0 ? "indigo" : "default", sub: "已认领任务" },
+          { label: "历史完成", value: rows.reduce((s2, a) => s2 + a.devCount + a.testCount, 0), sub: "开发+测试任务数" },
+        ]}
+      />
+      <div className="grid gap-3 xl:grid-cols-4">
+      <div className="space-y-3 xl:col-span-3">
       <section className="space-y-2.5">
         {rows.map((a) => (
           <div
@@ -125,7 +149,15 @@ export default async function AgentsPage() {
         projects={projects}
         agents={rows.map((a) => ({ id: a.id, username: a.username, enabled: a.enabled }))}
       />
+      </div>
 
+      <div className="space-y-3">
+      <Panel title="完成量排行">
+        {rank.length > 0 ? <HBarList data={rank} color={CHART_COLORS[1]} /> : <p className="py-4 text-center text-xs text-zinc-400">暂无数据</p>}
+      </Panel>
+      <Panel title="角色构成">
+        {byRole.length > 0 ? <Donut data={byRole} centerLabel="Agent" size={104} /> : <p className="py-4 text-center text-xs text-zinc-400">暂无数据</p>}
+      </Panel>
       <section className="rounded-2xl border border-zinc-200 bg-white p-4 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <h2 className="mb-2 font-medium">近 7 天 LLM 用量（专家 Agent）</h2>
         {usage.length === 0 ? (
@@ -145,6 +177,8 @@ export default async function AgentsPage() {
           </ul>
         )}
       </section>
-    </main>
+      </div>
+      </div>
+    </PageShell>
   );
 }

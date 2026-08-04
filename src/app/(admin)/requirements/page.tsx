@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { isDemoMode, DEMO_REQ_LIST } from "@/lib/demo";
 import { StatusChip, PriorityChip, STATUS_LABEL } from "@/components/status";
+import { PageShell, PageHeader } from "@/components/ui";
 import type { ReqStatus } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -69,9 +70,12 @@ export default async function RequirementsPage({
     }));
   }
 
+  const statusCounts = new Map<string, number>();
+  rows.forEach((r) => statusCounts.set(r.status, (statusCounts.get(r.status) ?? 0) + 1));
+
   return (
-    <main className="mx-auto max-w-5xl px-4 py-5 sm:px-6">
-      <h1 className="mb-3 text-xl font-semibold tracking-tight">需求列表</h1>
+    <PageShell>
+      <PageHeader title="需求列表" subtitle="全部需求的状态检索；点击行进入详情（时间线/验收操作）" />
 
       <div className="mb-4 flex flex-wrap gap-1.5">
         {FILTERS.map((f) => {
@@ -121,6 +125,6 @@ export default async function RequirementsPage({
           )}
         </ul>
       </div>
-    </main>
+    </PageShell>
   );
 }

@@ -126,10 +126,11 @@ export function ConfirmList({ items, projects }: Props) {
         )}
       </div>
 
+      <div className="grid gap-3 2xl:grid-cols-2">
       {items.map((item) => (
         <div
           key={item.id}
-          className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
+          className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
         >
           <div className="flex items-start gap-2">
             {selectMode && (
@@ -274,6 +275,7 @@ export function ConfirmList({ items, projects }: Props) {
           </div>
         </div>
       ))}
+      </div>
     </div>
   );
 }

@@ -73,7 +73,7 @@ export default async function RequirementDetailPage({ params }: { params: Promis
   const box = "rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900";
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-5 sm:px-6">
+    <main className="mx-auto w-full max-w-[1720px] px-4 py-5 sm:px-6 xl:px-8">
       <header className="mb-4">
         <p className="font-mono text-xs text-zinc-400">REQ-{d.seq}</p>
         <div className="mt-1 flex flex-wrap items-center gap-2">

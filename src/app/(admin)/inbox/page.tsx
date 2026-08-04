@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { isDemoMode, DEMO } from "@/lib/demo";
 import { ImportForm } from "./ui";
+import { PageShell, PageHeader } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -56,9 +57,12 @@ export default async function InboxPage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl space-y-6 px-4 py-5 sm:px-6">
+    <PageShell>
+      <PageHeader title="采集箱" subtitle="微信消息聚合状态与手动导入入口" />
+      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="space-y-6">
       <section>
-        <h1 className="mb-3 text-2xl font-semibold tracking-tight">手动导入需求</h1>
+        <h2 className="mb-2 text-sm font-medium text-zinc-500">手动导入需求</h2>
         <ImportForm />
       </section>
 
@@ -83,6 +87,7 @@ export default async function InboxPage() {
         )}
       </section>
 
+      </div>
       <section>
         <h2 className="mb-2 text-sm font-medium text-zinc-500">最近需求线索</h2>
         <ul className="space-y-2">
@@ -129,6 +134,7 @@ export default async function InboxPage() {
           )}
         </ul>
       </section>
-    </main>
+      </div>
+    </PageShell>
   );
 }

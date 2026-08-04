@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { SettingsUI } from "./ui";
 import { WechatSection } from "./ui-wechat";
+import { PageShell, PageHeader } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -14,8 +15,9 @@ export default async function SettingsPage() {
   ]);
 
   return (
-    <main className="mx-auto max-w-3xl p-4 sm:p-6">
-      <h1 className="mb-4 text-xl font-semibold">设置</h1>
+    <PageShell>
+      <PageHeader title="设置" subtitle="项目、LLM 供应商与专家模型、微信采集配置" />
+      <div className="grid items-start gap-4 xl:grid-cols-2">
       <SettingsUI
         projects={projects.map((p) => ({
           id: p.id,
@@ -39,7 +41,7 @@ export default async function SettingsPage() {
           effort: c.effort,
         }))}
       />
-      <div className="mt-6">
+      <div>
         <WechatSection
           bindings={bindings.map((b) => ({
             id: b.id,
@@ -54,6 +56,7 @@ export default async function SettingsPage() {
           botLastSeen={botSeen?.value ?? null}
         />
       </div>
-    </main>
+      </div>
+    </PageShell>
   );
 }
