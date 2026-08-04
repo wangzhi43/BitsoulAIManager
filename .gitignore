@@ -21,3 +21,7 @@ npm-debug.log*
 # Word 临时文件与原始需求文档（公开仓库不放业务文档）
 .~*
 *需求说明书.docx
+
+# 覆盖全局 gitignore 的 scripts 规则（本仓库 scripts/ 是源码）
+!scripts/
+!scripts/**
