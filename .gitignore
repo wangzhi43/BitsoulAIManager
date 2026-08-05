@@ -25,3 +25,4 @@ npm-debug.log*
 # 覆盖全局 gitignore 的 scripts 规则（本仓库 scripts/ 是源码）
 !scripts/
 !scripts/**
+docker-compose.override.yml

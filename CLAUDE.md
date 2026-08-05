@@ -44,3 +44,13 @@ BitSoul AI Manager — 基于大模型的多 Agent 自动化项目管理平台�
   - `npm test` — 涉及业务逻辑必跑
 - 密钥一律走环境变量或平台加密配置表，禁止入库明文、入 commit、入日志
 - 大模型调用一律经过 `src/lib/llm/` 的 provider 抽象层，禁止在业务代码中直连 SDK
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

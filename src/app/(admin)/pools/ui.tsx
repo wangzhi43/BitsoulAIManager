@@ -83,6 +83,50 @@ const MOCK = {
   currentUser: "张三",
 };
 
+// MOCK 数据:库中尚无需求时整板回退展示的示例卡片(真实需求出现后自动切换),后续替换
+const mockCard = (o: Partial<BoardCard> & { id: string; seq: number; title: string; status: string }): BoardCard => ({
+  project: "示例项目",
+  priority: "P1",
+  locked: false,
+  reason: null,
+  complexity: "M",
+  rank: null,
+  featureBranch: null,
+  userStory: MOCK.userStory,
+  createdBy: null,
+  createdAt: null,
+  devAgent: null,
+  testAgent: null,
+  agent: null,
+  heartbeatAgo: null,
+  timedOutHours: null,
+  claimedAt: null,
+  submittedAt: null,
+  submitNote: null,
+  commits: [],
+  conflict: false,
+  caseCount: null,
+  passRate: null,
+  conclusion: null,
+  defectCount: 0,
+  events: [],
+  ...o,
+});
+const MOCK_BOARD: BoardCard[] = [
+  mockCard({ id: "mock-1", seq: 1024, title: "用户登录流程优化", status: "READY", priority: "P0", featureBranch: "feature/login-opt" }),
+  mockCard({ id: "mock-2", seq: 1031, title: "会话消息持久化", status: "READY", complexity: "S", featureBranch: "feature/msg-persist" }),
+  mockCard({ id: "mock-3", seq: 1040, title: "知识库热词推荐", status: "READY", priority: "P2", featureBranch: "feature/hot-words" }),
+  mockCard({ id: "mock-4", seq: 1007, title: "多渠道接入适配", status: "DEVELOPING", priority: "P0", complexity: "L", devAgent: "Coder-01", heartbeatAgo: "1 分钟前", featureBranch: "feature/multi-channel", timedOutHours: 2 }),
+  mockCard({ id: "mock-5", seq: 1011, title: "用户资料权限控制", status: "DEVELOPING", devAgent: "Coder-04", heartbeatAgo: "2 分钟前", featureBranch: "feature/auth-control" }),
+  mockCard({ id: "mock-6", seq: 1022, title: "消息未读数统计", status: "DEVELOPING", priority: "P2", complexity: "S", devAgent: "Coder-02", heartbeatAgo: "30 秒前", featureBranch: "feature/unread-count" }),
+  mockCard({ id: "mock-7", seq: 1003, title: "会话转人工功能", status: "PENDING_TEST", featureBranch: "feature/transfer-human", commits: ["a1b2c3d"] }),
+  mockCard({ id: "mock-8", seq: 1015, title: "文件上传与预览", status: "PENDING_TEST", complexity: "S", featureBranch: "feature/file-preview", commits: ["d4e5f6a"] }),
+  mockCard({ id: "mock-9", seq: 1001, title: "登录验证码", status: "TESTING", priority: "P0", testAgent: "Tester-01", heartbeatAgo: "1 分钟前", featureBranch: "feature/login-code", passRate: 0.85, caseCount: 21, defectCount: 2 }),
+  mockCard({ id: "mock-10", seq: 1008, title: "会话列表分页优化", status: "TESTING", testAgent: "Tester-02", heartbeatAgo: "2 分钟前", featureBranch: "feature/session-page", passRate: 0.93, caseCount: 14, defectCount: 1 }),
+  mockCard({ id: "mock-11", seq: 998, title: "工作台首页概览", status: "PENDING_ACCEPT", priority: "P0", complexity: "L", testAgent: "Tester-01", passRate: 1, caseCount: 18 }),
+  mockCard({ id: "mock-12", seq: 1018, title: "自定义菜单管理", status: "PENDING_ACCEPT", priority: "P2", complexity: "S", testAgent: "Tester-03", passRate: 1, caseCount: 20, featureBranch: "feature/menu-manage" }),
+];
+
 /** 按 seq 稳定取 mock，避免 SSR/客户端不一致 */
 function pick<T>(arr: T[], seq: number): T {
   return arr[seq % arr.length];
@@ -310,6 +354,8 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
 
 function Drawer({ card, onClose }: { card: BoardCard; onClose: () => void }) {
   const [tab, setTab] = useState<"detail" | "relation" | "activity" | "ai">("detail");
+  // MOCK 卡片(空库回退)没有真实需求记录:详情跳转与优先级 API 降级为提示
+  const isMock = card.id.startsWith("mock-");
   const v = cardView(card);
   const lowPass = card.conclusion === "FAIL" || v.passRate < 0.9;
   const showTest = card.status === "TESTING" || card.status === "REVIEWING" || card.status === "PENDING_ACCEPT";
@@ -418,7 +464,11 @@ function Drawer({ card, onClose }: { card: BoardCard; onClose: () => void }) {
 
               <section>
                 <h3 className="mb-1.5 text-[12px] font-semibold text-slate-800">优先级</h3>
-                <PriorityControls id={card.id} priority={card.priority} locked={card.locked} />
+                {isMock ? (
+                  <p className="text-[12px] text-slate-400">示例数据，接入真实需求后可调整优先级</p>
+                ) : (
+                  <PriorityControls id={card.id} priority={card.priority} locked={card.locked} />
+                )}
                 {card.reason && <p className="mt-1.5 text-[11px] text-slate-400">{card.reason}</p>}
               </section>
 
@@ -502,9 +552,15 @@ function Drawer({ card, onClose }: { card: BoardCard; onClose: () => void }) {
         {/* 操作区 */}
         <div className="space-y-2 border-t border-slate-100 p-4">
           <div className="flex items-center gap-2">
-            <Link href={`/requirements/${card.id}`} className={`${btnCls("primary", "sm")} flex-1`}>
-              打开详情
-            </Link>
+            {isMock ? (
+              <button onClick={() => alert("示例数据，接入真实需求后可打开详情")} className={`${btnCls("primary", "sm")} flex-1`}>
+                打开详情
+              </button>
+            ) : (
+              <Link href={`/requirements/${card.id}`} className={`${btnCls("primary", "sm")} flex-1`}>
+                打开详情
+              </Link>
+            )}
             <Link href="/agents" className={`${btnCls("secondary", "sm")} flex-1`}>
               查看 Agent
             </Link>
@@ -521,7 +577,10 @@ function Drawer({ card, onClose }: { card: BoardCard; onClose: () => void }) {
   );
 }
 
-export function Board({ cards }: { cards: BoardCard[] }) {
+export function Board({ cards: realCards }: { cards: BoardCard[] }) {
+  // MOCK 回退:库中尚无需求时用示例卡片填满看板(真实需求出现后自动切换)
+  const isMockBoard = realCards.length === 0;
+  const cards = isMockBoard ? MOCK_BOARD : realCards;
   const router = useRouter();
   const [q, setQ] = useState("");
   const [project, setProject] = useState("");

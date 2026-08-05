@@ -60,6 +60,27 @@ const MOCK = {
   ], // 提交明细（message/作者/时间）未接入 git 日志
 };
 
+// MOCK 数据：库中尚无每日分支时整页回退展示的示例分支（真实分支出现后自动切换），后续替换
+const MOCK_BRANCH: BranchItem = {
+  id: "mock-branch",
+  project: "示例项目",
+  name: "daily/2025-05-20",
+  date: null,
+  createdAt: null,
+  mergedToMain: false,
+  mergedAt: null,
+  requirements: [
+    { id: "m1", seq: 9101, title: "用户登录优化", status: "ACCEPTED", conflict: false, submitNote: "feature/login-opt 登录页一键登录与引导绑定", agent: "Coder-01", featureBranch: "feature/login-opt", commits: [], submittedAt: null, reports: [{ conclusion: "PASS", passRate: 1 }] },
+    { id: "m2", seq: 9102, title: "订单流程重构", status: "ACCEPTED", conflict: false, submitNote: "拆分订单服务，优化事务边界", agent: "Coder-04", featureBranch: "feature/order-refactor", commits: [], submittedAt: null, reports: [{ conclusion: "PASS", passRate: 1 }] },
+    { id: "m3", seq: 9103, title: "支付渠道支持（支付宝）", status: "PENDING_ACCEPT", conflict: false, submitNote: "新增支付宝支付能力与回调处理", agent: "Coder-02", featureBranch: "feature/pay-alipay", commits: [], submittedAt: null, reports: [{ conclusion: "PASS", passRate: 1 }] },
+    { id: "m4", seq: 9104, title: "消息中心未读计数修复", status: "PENDING_ACCEPT", conflict: false, submitNote: "修复未读计数多端同步不一致", agent: "Coder-03", featureBranch: "feature/msg-fix", commits: [], submittedAt: null, reports: [{ conclusion: "PASS", passRate: 1 }] },
+    { id: "m5", seq: 9105, title: "导出功能性能优化", status: "PENDING_ACCEPT", conflict: false, submitNote: "优化大数据量导出耗时", agent: "Coder-01", featureBranch: "feature/export-opt", commits: [], submittedAt: null, reports: [{ conclusion: "PASS", passRate: 1 }] },
+    { id: "m6", seq: 9106, title: "权限校验问题修复", status: "TESTING", conflict: false, submitNote: "修复越权访问路径", agent: "Coder-05", featureBranch: "feature/auth-fix", commits: [], submittedAt: null, reports: [] },
+    { id: "m7", seq: 9107, title: "短信通知能力", status: "DEVELOPING", conflict: false, submitNote: null, agent: "Coder-06", featureBranch: "feature/sms", commits: [], submittedAt: null, reports: [] },
+    { id: "m8", seq: 9108, title: "数据报表样式优化", status: "READY", conflict: false, submitNote: null, agent: null, featureBranch: "feature/report-style", commits: [], submittedAt: null, reports: [] },
+  ],
+};
+
 // MOCK 数据：需求类型字段未落库，按标题关键词推断，后续替换为真实类型
 function reqType(title: string): { label: string; tone: "green" | "blue" | "amber" | "violet" } {
   if (/修复|缺陷|问题|bug/i.test(title)) return { label: "缺陷", tone: "amber" };
@@ -423,7 +444,11 @@ function AcceptPanel({ branch, demo }: { branch: BranchItem; demo: boolean }) {
 
 const TABS = ["变更摘要", "文件差异", "测试报告", "冲突与风险", "需求映射", "待验收项"];
 
-export function ReviewCenter({ branches, demo }: { branches: BranchItem[]; demo: boolean }) {
+export function ReviewCenter({ branches: realBranches, demo: demoMode }: { branches: BranchItem[]; demo: boolean }) {
+  // MOCK 回退：库中尚无每日分支时用示例分支填充整页（写操作按展示模式拦截）
+  const isMockFallback = realBranches.length === 0;
+  const branches = isMockFallback ? [MOCK_BRANCH] : realBranches;
+  const demo = demoMode || isMockFallback;
   const [selectedId, setSelectedId] = useState<string>(
     () => (branches.find((b) => !b.mergedToMain) ?? branches[0])?.id ?? "",
   );
@@ -451,13 +476,7 @@ export function ReviewCenter({ branches, demo }: { branches: BranchItem[]; demo:
     return MOCK.commits.map((c) => ({ sha: c.sha, msg: c.msg, author: c.author, time: c.time, reqId: null, req: c.req }));
   }, [branch]);
 
-  if (!branch) {
-    return (
-      <p className="rounded-xl border border-dashed border-slate-300 py-10 text-center text-[13px] text-slate-400">
-        尚无每日分支（每天 02:00 自动创建）
-      </p>
-    );
-  }
+  if (!branch) return null;
 
   const reqs = branch.requirements;
   const shownReqs = onlyPending ? reqs.filter((r) => r.status === "PENDING_ACCEPT") : reqs;
