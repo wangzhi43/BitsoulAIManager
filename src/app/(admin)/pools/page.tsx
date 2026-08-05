@@ -1,212 +1,199 @@
-import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { isDemoMode, DEMO } from "@/lib/demo";
-import { PageShell, PageHeader, StatStrip, Panel, Table } from "@/components/ui";
-import { Donut, VBars, CHART_COLORS } from "@/components/charts";
-import { PriorityChip } from "@/components/status";
-import { PriorityControls } from "./ui";
+import { Board, type BoardCard } from "./ui";
 
 export const dynamic = "force-dynamic";
 
-interface DevRow {
-  id: string;
-  seq: number;
-  title: string;
-  project?: string | null;
-  rank: number | null;
-  priority: string | null;
-  locked: boolean;
-  reason: string | null;
-  status: string;
-  agent: string | null;
-  conflict: boolean;
-  complexity: string;
+/** 看板覆盖的需求状态（五列：测试中列含 TESTING 与 REVIEWING） */
+const BOARD_STATUSES = [
+  "READY",
+  "DEVELOPING",
+  "PENDING_TEST",
+  "TESTING",
+  "REVIEWING",
+  "PENDING_ACCEPT",
+] as const;
+
+const HEARTBEAT_TIMEOUT_MS = 4 * 60 * 60 * 1000; // 调度规则：心跳超时 4 小时
+
+function ago(d: Date | null | undefined): string | null {
+  if (!d) return null;
+  const m = Math.max(0, Math.floor((Date.now() - d.getTime()) / 60000));
+  if (m < 1) return "刚刚";
+  if (m < 60) return `${m} 分钟前`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} 小时前`;
+  return `${Math.floor(h / 24)} 天前`;
 }
-interface TestRow {
-  id: string;
-  seq: number;
-  title: string;
-  project?: string | null;
-  priority: string;
-  status: string;
-  agent: string | null;
-  caseCount: number;
+
+function fmt(d: Date | null | undefined): string | null {
+  if (!d) return null;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function timeoutHours(d: Date | null | undefined): number | null {
+  if (!d) return null;
+  const over = Date.now() - d.getTime() - HEARTBEAT_TIMEOUT_MS;
+  return over > 0 ? Math.max(1, Math.floor(over / 3600000)) : null;
 }
 
 export default async function PoolsPage() {
   const demo = await isDemoMode();
-
-  let devRows: DevRow[];
-  let testRows: TestRow[];
-  let pendingAccept: number;
-  let reviewing: number;
+  let cards: BoardCard[];
 
   if (demo) {
-    devRows = DEMO.devPool;
-    testRows = DEMO.testPool;
-    pendingAccept = DEMO.poolSummary.pendingAccept;
-    reviewing = DEMO.poolSummary.reviewing;
+    // 演示数据：开发池 → 待开发/开发中，测试池 → 待测试/测试中
+    cards = [
+      ...DEMO.devPool.map((r): BoardCard => ({
+        id: r.id,
+        seq: r.seq,
+        title: r.title,
+        status: r.status,
+        project: r.project,
+        priority: r.priority,
+        locked: r.locked,
+        reason: r.reason,
+        complexity: r.complexity,
+        rank: r.rank,
+        featureBranch: r.status === "DEVELOPING" ? `feature/REQ-${r.seq}` : null,
+        userStory: "",
+        createdBy: null,
+        createdAt: null,
+        devAgent: r.agent,
+        testAgent: null,
+        agent: r.agent,
+        heartbeatAgo: r.agent ? "1 分钟前" : null,
+        timedOutHours: null,
+        claimedAt: null,
+        submittedAt: null,
+        submitNote: null,
+        commits: [],
+        conflict: r.conflict,
+        caseCount: null,
+        passRate: null,
+        conclusion: null,
+        defectCount: 0,
+        events: [],
+      })),
+      ...DEMO.testPool.map((t): BoardCard => ({
+        id: t.id,
+        seq: t.seq,
+        title: t.title,
+        status: t.status === "CLAIMED" ? "TESTING" : "PENDING_TEST",
+        project: t.project,
+        priority: t.priority,
+        locked: false,
+        reason: null,
+        complexity: "M",
+        rank: null,
+        featureBranch: `feature/REQ-${t.seq}`,
+        userStory: "",
+        createdBy: null,
+        createdAt: null,
+        devAgent: null,
+        testAgent: t.agent,
+        agent: t.agent,
+        heartbeatAgo: t.agent ? "2 分钟前" : null,
+        timedOutHours: null,
+        claimedAt: null,
+        submittedAt: null,
+        submitNote: null,
+        commits: [],
+        conflict: false,
+        caseCount: t.caseCount,
+        passRate: null,
+        conclusion: null,
+        defectCount: 0,
+        events: [],
+      })),
+    ];
   } else {
-    const [devPool, testPool, pa, rv] = await Promise.all([
-      prisma.requirement.findMany({
-        where: { status: { in: ["READY", "DEVELOPING"] } },
-        include: {
-          project: { select: { name: true } },
-          devTask: { select: { status: true, claimedBy: { select: { username: true } } } },
+    const rows = await prisma.requirement.findMany({
+      where: { status: { in: [...BOARD_STATUSES] } },
+      include: {
+        project: { select: { name: true } },
+        source: { select: { senderName: true } },
+        devTask: {
+          select: {
+            status: true,
+            claimedAt: true,
+            lastHeartbeat: true,
+            submittedAt: true,
+            submitNote: true,
+            commits: true,
+            claimedBy: { select: { username: true } },
+          },
         },
-        orderBy: [{ status: "asc" }, { poolRank: "asc" }],
-      }),
-      prisma.testTask.findMany({
-        where: { status: { in: ["POOL", "CLAIMED"] } },
-        include: {
-          requirement: { select: { seq: true, title: true, project: { select: { name: true } } } },
-          claimedBy: { select: { username: true } },
+        testTasks: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: {
+            status: true,
+            cases: true,
+            lastHeartbeat: true,
+            claimedAt: true,
+            claimedBy: { select: { username: true } },
+            report: { select: { passRate: true, conclusion: true } },
+          },
         },
-        orderBy: { priority: "asc" },
-      }),
-      prisma.requirement.count({ where: { status: "PENDING_ACCEPT" } }),
-      prisma.requirement.count({ where: { status: "REVIEWING" } }),
-    ]);
-    devRows = devPool.map((r) => ({
-      id: r.id,
-      seq: r.seq,
-      title: r.title,
-      project: r.project?.name,
-      rank: r.poolRank,
-      priority: r.priority,
-      locked: r.priorityLocked,
-      reason: r.priorityReason,
-      status: r.status,
-      agent: r.devTask?.claimedBy?.username ?? null,
-      conflict: r.devTask?.status === "CONFLICT",
-      complexity: r.complexity,
-    }));
-    testRows = testPool.map((t) => ({
-      id: t.id,
-      seq: t.requirement.seq,
-      title: t.requirement.title,
-      project: t.requirement.project?.name,
-      priority: t.priority,
-      status: t.status,
-      agent: t.claimedBy?.username ?? null,
-      caseCount: (t.cases as unknown[]).length,
-    }));
-    pendingAccept = pa;
-    reviewing = rv;
+        events: {
+          orderBy: { createdAt: "desc" },
+          take: 8,
+          select: { fromStatus: true, toStatus: true, actor: true, note: true, createdAt: true },
+        },
+        _count: { select: { defects: true } },
+      },
+      orderBy: [{ poolRank: "asc" }, { updatedAt: "desc" }],
+    });
+
+    cards = rows.map((r): BoardCard => {
+      const test = r.testTasks[0] ?? null;
+      const inDev = r.status === "READY" || r.status === "DEVELOPING";
+      const inTest = r.status === "PENDING_TEST" || r.status === "TESTING";
+      const devAgent = r.devTask?.claimedBy?.username ?? null;
+      const testAgent = test?.claimedBy?.username ?? null;
+      const heartbeat = inTest ? test?.lastHeartbeat : r.devTask?.lastHeartbeat;
+      const active = r.status === "DEVELOPING" || r.status === "TESTING";
+      return {
+        id: r.id,
+        seq: r.seq,
+        title: r.title,
+        status: r.status,
+        project: r.project?.name ?? null,
+        priority: r.priority,
+        locked: r.priorityLocked,
+        reason: r.priorityReason,
+        complexity: r.complexity,
+        rank: r.poolRank,
+        featureBranch: r.featureBranch,
+        userStory: r.userStory,
+        createdBy: r.source?.senderName ?? null,
+        createdAt: fmt(r.createdAt),
+        devAgent,
+        testAgent,
+        agent: inDev ? devAgent : inTest ? testAgent : devAgent,
+        heartbeatAgo: active ? ago(heartbeat) : null,
+        timedOutHours: active ? timeoutHours(heartbeat) : null,
+        claimedAt: fmt(inTest ? test?.claimedAt : r.devTask?.claimedAt),
+        submittedAt: fmt(r.devTask?.submittedAt),
+        submitNote: r.devTask?.submitNote ?? null,
+        commits: Array.isArray(r.devTask?.commits) ? (r.devTask.commits as string[]) : [],
+        conflict: r.devTask?.status === "CONFLICT",
+        caseCount: test ? (test.cases as unknown[]).length : null,
+        passRate: test?.report?.passRate ?? null,
+        conclusion: test?.report?.conclusion ?? null,
+        defectCount: r._count.defects,
+        events: r.events.map((e) => ({
+          fromStatus: e.fromStatus,
+          toStatus: e.toStatus,
+          actor: e.actor,
+          note: e.note,
+          at: fmt(e.createdAt)!,
+        })),
+      };
+    });
   }
 
-  const claiming = devRows.filter((r) => r.status === "DEVELOPING").length;
-  const conflicts = devRows.filter((r) => r.conflict).length;
-  const byPriority = ["P0", "P1", "P2", "P3"].map((p, i) => ({
-    name: p,
-    value: devRows.filter((r) => r.priority === p).length,
-    color: [CHART_COLORS[3], CHART_COLORS[2], CHART_COLORS[0], "#a1a1aa"][i],
-  })).filter((x) => x.value > 0);
-  const byComplexity = ["S", "M", "L"].map((c) => ({
-    label: c,
-    value: devRows.filter((r) => r.complexity === c).length,
-  }));
-
-  return (
-    <PageShell>
-      <PageHeader title="任务池" subtitle="项管专家自动排序，Agent 按序认领；可手动调整并锁定优先级" />
-      <StatStrip
-        items={[
-          { label: "开发池", value: devRows.length, sub: `${claiming} 个开发中`, tone: "indigo" },
-          { label: "测试池", value: testRows.length, sub: `${testRows.filter((t) => t.status === "CLAIMED").length} 个测试中` },
-          { label: "待验收 / 待裁决", value: `${pendingAccept} / ${reviewing}`, tone: pendingAccept + reviewing > 0 ? "amber" : "default", sub: "在需求列表处理" },
-          { label: "合并冲突", value: conflicts, tone: conflicts > 0 ? "red" : "green", sub: conflicts > 0 ? "需人工处理" : "一切正常" },
-        ]}
-      />
-
-      <div className="grid gap-3 xl:grid-cols-4">
-        <div className="space-y-3 xl:col-span-3">
-          <Panel title={`开发池（${devRows.length}）`}>
-            <Table head={["#", "需求", "项目", "复杂度", "状态", "优先级调整"]}>
-              {devRows.map((r) => (
-                <tr key={r.id} className="align-top">
-                  <td className="py-2.5 pr-2 font-mono text-xs text-zinc-400">
-                    {r.rank ? `#${r.rank}` : "—"}
-                  </td>
-                  <td className="max-w-md py-2.5 pr-3">
-                    <p className="flex items-center gap-1.5">
-                      <PriorityChip priority={r.priority} />
-                      <span className="font-mono text-[11px] text-zinc-400">REQ-{r.seq}</span>
-                      <span className="truncate font-medium">{r.title}</span>
-                    </p>
-                    {r.reason && <p className="mt-0.5 truncate text-[11px] text-zinc-400">{r.reason}</p>}
-                  </td>
-                  <td className="py-2.5 pr-3 text-xs text-zinc-500">{r.project}</td>
-                  <td className="py-2.5 pr-3 text-xs">{r.complexity}</td>
-                  <td className="py-2.5 pr-3">
-                    {r.conflict ? (
-                      <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] text-red-700 dark:bg-red-950/60 dark:text-red-400">⚠ 冲突</span>
-                    ) : r.status === "DEVELOPING" ? (
-                      <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] text-sky-700 dark:bg-sky-950/60 dark:text-sky-400">⚙ {r.agent}</span>
-                    ) : (
-                      <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-500 dark:bg-zinc-800">待认领</span>
-                    )}
-                  </td>
-                  <td className="py-2.5 text-right">
-                    <PriorityControls id={r.id} priority={r.priority} locked={r.locked} />
-                  </td>
-                </tr>
-              ))}
-              {devRows.length === 0 && (
-                <tr><td colSpan={6} className="py-8 text-center text-zinc-400">开发池为空</td></tr>
-              )}
-            </Table>
-          </Panel>
-
-          <Panel title={`测试池（${testRows.length}）`}>
-            <Table head={["优先级", "需求", "项目", "用例数", "状态"]}>
-              {testRows.map((t) => (
-                <tr key={t.id}>
-                  <td className="py-2.5 pr-2"><PriorityChip priority={t.priority} /></td>
-                  <td className="max-w-md py-2.5 pr-3">
-                    <span className="font-mono text-[11px] text-zinc-400">REQ-{t.seq}</span>{" "}
-                    <span className="font-medium">{t.title}</span>
-                  </td>
-                  <td className="py-2.5 pr-3 text-xs text-zinc-500">{t.project}</td>
-                  <td className="py-2.5 pr-3 text-xs tabular-nums">{t.caseCount}</td>
-                  <td className="py-2.5 text-right">
-                    {t.status === "CLAIMED" ? (
-                      <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] text-sky-700 dark:bg-sky-950/60 dark:text-sky-400">⚙ {t.agent}</span>
-                    ) : (
-                      <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-500 dark:bg-zinc-800">待认领</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {testRows.length === 0 && (
-                <tr><td colSpan={5} className="py-8 text-center text-zinc-400">测试池为空</td></tr>
-              )}
-            </Table>
-          </Panel>
-        </div>
-
-        <div className="space-y-3">
-          <Panel title="优先级构成">
-            {byPriority.length > 0 ? (
-              <Donut data={byPriority} centerLabel="开发池" size={110} />
-            ) : (
-              <p className="py-4 text-center text-xs text-zinc-400">暂无数据</p>
-            )}
-          </Panel>
-          <Panel title="复杂度分布">
-            <VBars data={byComplexity} color={CHART_COLORS[1]} valueLabel={(v) => String(v)} height={110} />
-          </Panel>
-          <Panel title="调度规则">
-            <ul className="space-y-2 text-xs text-zinc-500">
-              <li>· Agent 按 # 序认领；P0 为线上缺陷/阻塞</li>
-              <li>· 🔒 锁定后项管 Agent 不再改动优先级</li>
-              <li>· 心跳超时 4 小时自动释放回池</li>
-              <li>· 同一需求的开发与测试不能是同一 Agent</li>
-              <li>· 待验收/待裁决在 <Link href="/requirements?status=PENDING_ACCEPT" className="text-indigo-500">需求列表</Link> 处理</li>
-            </ul>
-          </Panel>
-        </div>
-      </div>
-    </PageShell>
-  );
+  return <Board cards={cards} />;
 }

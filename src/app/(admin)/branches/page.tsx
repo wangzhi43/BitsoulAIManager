@@ -1,37 +1,45 @@
 import { prisma } from "@/lib/db";
 import { isDemoMode, DEMO } from "@/lib/demo";
-import { MergeButton } from "./ui";
-import { PageShell, PageHeader, StatStrip } from "@/components/ui";
+import { currentAdmin } from "@/lib/auth";
+import { ReviewCenter, type BranchItem } from "./ui";
+import { PageShell, PageHeader } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
-interface ReqRow {
-  id: string;
-  seq: number;
-  title: string;
-  status: string;
-  conflict: boolean;
-  submitNote: string | null;
-  agent: string | null;
-  reports: { conclusion: string; passRate: number }[];
-}
-interface BranchRow {
-  id: string;
-  project: string;
-  name: string;
-  mergedToMain: boolean;
-  mergedAt: Date | null;
-  requirements: ReqRow[];
-}
+// 晚间审查与验收中心（docs/ui_design/XA9hhmonfsFrGAye.png）
+// 服务端负责取数（DailyBranch + Requirement + DevTask + TestReport），表现层在 ./ui.tsx
 
-const MERGED_STATUSES = ["PENDING_TEST", "TESTING", "TESTED", "REVIEWING", "PENDING_ACCEPT", "ACCEPTED"];
+// MOCK 数据：真实链路未接入时的界面填充，后续替换（通知计数未接入消息中心）
+const MOCK_NOTIFY_COUNT = 3;
 
 export default async function BranchesPage() {
   const demo = await isDemoMode();
+  const admin = await currentAdmin();
 
-  let rows: BranchRow[];
+  let rows: BranchItem[];
   if (demo) {
-    rows = DEMO.branches;
+    rows = DEMO.branches.map((b) => ({
+      id: b.id,
+      project: b.project,
+      name: b.name,
+      date: null,
+      createdAt: null,
+      mergedToMain: b.mergedToMain,
+      mergedAt: b.mergedAt ? b.mergedAt.toISOString() : null,
+      requirements: b.requirements.map((r) => ({
+        id: r.id,
+        seq: r.seq,
+        title: r.title,
+        status: r.status,
+        conflict: r.conflict,
+        submitNote: r.submitNote,
+        agent: r.agent,
+        featureBranch: `feature/REQ-${r.seq}`,
+        commits: [],
+        submittedAt: null,
+        reports: r.reports,
+      })),
+    }));
   } else {
     const branches = await prisma.dailyBranch.findMany({
       include: {
@@ -39,7 +47,13 @@ export default async function BranchesPage() {
         requirements: {
           include: {
             devTask: {
-              select: { status: true, submitNote: true, claimedBy: { select: { username: true } } },
+              select: {
+                status: true,
+                submitNote: true,
+                commits: true,
+                submittedAt: true,
+                claimedBy: { select: { username: true } },
+              },
             },
             testTasks: { include: { report: { select: { conclusion: true, passRate: true } } } },
           },
@@ -53,8 +67,10 @@ export default async function BranchesPage() {
       id: b.id,
       project: b.project.name,
       name: b.name,
+      date: b.date.toISOString(),
+      createdAt: b.createdAt.toISOString(),
       mergedToMain: b.mergedToMain,
-      mergedAt: b.mergedAt,
+      mergedAt: b.mergedAt?.toISOString() ?? null,
       requirements: b.requirements.map((r) => ({
         id: r.id,
         seq: r.seq,
@@ -63,6 +79,9 @@ export default async function BranchesPage() {
         conflict: r.devTask?.status === "CONFLICT",
         submitNote: r.devTask?.submitNote ?? null,
         agent: r.devTask?.claimedBy?.username ?? null,
+        featureBranch: r.featureBranch,
+        commits: Array.isArray(r.devTask?.commits) ? (r.devTask!.commits as string[]) : [],
+        submittedAt: r.devTask?.submittedAt?.toISOString() ?? null,
         reports: r.testTasks
           .map((t) => t.report)
           .filter((x) => !!x)
@@ -71,94 +90,41 @@ export default async function BranchesPage() {
     }));
   }
 
-  const unmerged = rows.filter((b) => !b.mergedToMain).length;
-  const conflictCount = rows.reduce((s2, b) => s2 + b.requirements.filter((r) => r.conflict).length, 0);
-  const readyReqs = rows
-    .filter((b) => !b.mergedToMain)
-    .reduce((s2, b) => s2 + b.requirements.filter((r) => MERGED_STATUSES.includes(r.status)).length, 0);
-
   return (
     <PageShell>
-      <PageHeader title="分支审查" subtitle="每晚检查当日分支的变更与测试结论，确认后合并回 main" />
-      <StatStrip
-        items={[
-          { label: "待合并分支", value: unmerged, tone: unmerged > 0 ? "indigo" : "default", sub: "今晚需要审查" },
-          { label: "已并入需求", value: readyReqs, sub: "在待合并分支中" },
-          { label: "合并冲突", value: conflictCount, tone: conflictCount > 0 ? "red" : "green", sub: conflictCount > 0 ? "解决后才能合并" : "一切正常" },
-        ]}
+      <PageHeader
+        title={
+          <span className="inline-flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-[14px]">🌙</span>
+            晚间审查与验收中心
+          </span>
+        }
+        subtitle="每日闭环：审查分支 → 验收需求 → 安全合并"
+        actions={
+          <>
+            {/* MOCK：通知计数未接入消息中心 */}
+            <span className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg text-[16px] text-slate-500 hover:bg-slate-100" title="通知（接入中）">
+              🔔
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+                {MOCK_NOTIFY_COUNT}
+              </span>
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-lg px-2 py-1">
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-100 text-[12px] font-semibold text-blue-600">
+                {(admin?.displayName ?? "Admin").slice(0, 1)}
+              </span>
+              <span className="text-left leading-tight">
+                <span className="block text-[12px] font-medium text-slate-700">{admin?.displayName ?? "Admin"}</span>
+                <span className="block text-[10px] text-slate-400">管理员</span>
+              </span>
+            </span>
+            <span className="text-[12px] text-blue-600" title="使用指南编写中">
+              ◎ 使用指南
+            </span>
+          </>
+        }
       />
-      <div className="grid gap-3 2xl:grid-cols-2">
-        {rows.map((b) => {
-          const hasConflict = b.requirements.some((r) => r.conflict);
-          const mergedCount = b.requirements.filter((r) => MERGED_STATUSES.includes(r.status)).length;
-          return (
-            <div
-              key={b.id}
-              className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <h2 className="font-medium">
-                    {b.project}{" "}
-                    <span className="ml-1 rounded-md bg-zinc-100 px-1.5 py-0.5 font-mono text-xs text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                      {b.name}
-                    </span>
-                  </h2>
-                  <p className="mt-0.5 text-xs text-zinc-400">
-                    {b.mergedToMain
-                      ? `✓ 已合并 main（${b.mergedAt?.toLocaleString("zh-CN") ?? ""}）`
-                      : `${mergedCount} 个需求已并入${hasConflict ? " · 存在冲突" : ""}`}
-                  </p>
-                </div>
-                {!b.mergedToMain && <MergeButton branchId={b.id} disabled={hasConflict || mergedCount === 0} />}
-              </div>
-
-              {b.requirements.length > 0 && (
-                <ul className="mt-3 space-y-2">
-                  {b.requirements.map((r) => (
-                    <li key={r.id} className="rounded-xl bg-zinc-50 p-3 text-sm dark:bg-zinc-800/50">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-mono text-xs text-zinc-400">REQ-{r.seq}</span>
-                        <span className="font-medium">{r.title}</span>
-                        <span className="rounded-md bg-zinc-200/70 px-1.5 py-0.5 text-[11px] text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
-                          {r.status}
-                        </span>
-                        {r.conflict && (
-                          <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700 dark:bg-red-950/60 dark:text-red-400">
-                            ⚠ 合并冲突
-                          </span>
-                        )}
-                        {r.reports.map((rep, i) => (
-                          <span
-                            key={i}
-                            className={`rounded-full px-2 py-0.5 text-xs ${
-                              rep.conclusion === "PASS"
-                                ? "bg-green-100 text-green-700 dark:bg-green-950/60 dark:text-green-400"
-                                : "bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-400"
-                            }`}
-                          >
-                            {rep.conclusion === "PASS" ? "✓" : "✗"} 测试{rep.conclusion}（{Math.round(rep.passRate * 100)}%）
-                          </span>
-                        ))}
-                      </div>
-                      {r.submitNote && (
-                        <p className="mt-1 text-xs text-zinc-400">
-                          {r.agent}：{r.submitNote}
-                        </p>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          );
-        })}
-        {rows.length === 0 && (
-          <p className="rounded-2xl border border-dashed border-zinc-300 py-8 text-center text-sm text-zinc-400 dark:border-zinc-700">
-            尚无每日分支（每天 02:00 自动创建）
-          </p>
-        )}
-      </div>
+      <ReviewCenter branches={rows} demo={demo} />
     </PageShell>
   );
 }

@@ -1,6 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { btnCls } from "@/components/ui";
+
+const input =
+  "w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] focus:border-blue-500 focus:outline-none";
 
 export function ChangePasswordForm() {
   const [open, setOpen] = useState(false);
@@ -31,13 +35,13 @@ export function ChangePasswordForm() {
   }
 
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
       <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between text-left">
         <span>
-          <p className="font-medium">修改密码</p>
-          <p className="text-sm text-zinc-400">修改当前管理员账号的登录密码</p>
+          <p className="text-[13px] font-semibold text-slate-800">修改密码</p>
+          <p className="mt-0.5 text-[12px] text-slate-400">修改当前管理员账号的登录密码</p>
         </span>
-        <span className="text-zinc-300">{open ? "▴" : "▾"}</span>
+        <span className="text-slate-300">{open ? "▴" : "▾"}</span>
       </button>
       {open && (
         <form onSubmit={submit} className="mt-3 space-y-2">
@@ -45,7 +49,7 @@ export function ChangePasswordForm() {
             type="password"
             placeholder="旧密码"
             autoComplete="current-password"
-            className="w-full rounded-xl border border-zinc-300 px-3 py-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+            className={input}
             value={oldPw}
             onChange={(e) => setOldPw(e.target.value)}
           />
@@ -53,20 +57,20 @@ export function ChangePasswordForm() {
             type="password"
             placeholder="新密码（至少 8 位）"
             autoComplete="new-password"
-            className="w-full rounded-xl border border-zinc-300 px-3 py-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+            className={input}
             value={newPw}
             onChange={(e) => setNewPw(e.target.value)}
           />
           <button
             type="submit"
             disabled={busy || !oldPw || newPw.length < 8}
-            className="w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
+            className={`${btnCls("primary", "md")} w-full`}
           >
             {busy ? "提交中…" : "确认修改"}
           </button>
         </form>
       )}
-      {msg && <p className="mt-2 text-sm text-zinc-500">{msg}</p>}
+      {msg && <p className="mt-2 text-[12px] text-slate-500">{msg}</p>}
     </div>
   );
 }

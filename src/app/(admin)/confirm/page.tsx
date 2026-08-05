@@ -14,7 +14,7 @@ export default async function ConfirmPage() {
   let projects: { id: string; name: string }[];
 
   if (demo) {
-    items = DEMO.confirmItems;
+    items = DEMO.confirmItems.map((i) => ({ ...i, priority: null as string | null }));
     projects = DEMO.dashboard.projects.map((p) => ({ id: p.id, name: p.name }));
   } else {
     const [requirements, dbProjects] = await Promise.all([
@@ -35,6 +35,7 @@ export default async function ConfirmPage() {
       userStory: r.userStory,
       acceptance: r.acceptance as string[],
       complexity: r.complexity as string,
+      priority: r.priority as string | null,
       projectId: r.projectId,
       projectName: r.project?.name ?? null,
       clarifications: (r.clarifications as { question: string; answer: string | null }[] | null) ?? [],
@@ -64,7 +65,7 @@ export default async function ConfirmPage() {
   return (
     <PageShell>
       <PageHeader
-        title={<>需求确认 <span className="text-base font-normal text-zinc-400">（{items.length}）</span></>}
+        title={<>需求确认 <span className="text-base font-normal text-slate-400">（{items.length}）</span></>}
         subtitle="产品专家拆解后的需求单在此确认后进入待开发池"
       />
       <StatStrip
@@ -93,18 +94,19 @@ export default async function ConfirmPage() {
                 size={116}
               />
             ) : (
-              <p className="py-4 text-center text-xs text-zinc-400">暂无数据</p>
+              <p className="py-4 text-center text-[12px] text-slate-400">暂无数据</p>
             )}
           </Panel>
           <Panel title="复杂度分布">
             <VBars data={byComplexity} color={CHART_COLORS[0]} valueLabel={(v) => String(v)} height={110} />
           </Panel>
           <Panel title="操作说明">
-            <ul className="space-y-2 text-xs text-zinc-500">
-              <li className="flex gap-2"><span className="text-green-600">确认</span>需求进入待开发池，项管 Agent 自动排优先级</li>
-              <li className="flex gap-2"><span className="text-zinc-600 dark:text-zinc-300">编辑</span>调整标题、用户故事与验收标准后再确认</li>
-              <li className="flex gap-2"><span className="text-red-500">驳回</span>关闭本单；「驳回重拆」会把整个线索连同原因交回产品专家重新拆分</li>
-              <li className="flex gap-2"><span className="text-indigo-600">多选合并</span>把多个相关单合成一个（第一个所选为目标）</li>
+            <ul className="space-y-2 text-[12px] text-slate-500">
+              <li className="flex gap-2"><span className="shrink-0 font-medium text-blue-600">确认</span>需求进入待开发池，项管 Agent 自动排优先级</li>
+              <li className="flex gap-2"><span className="shrink-0 font-medium text-slate-600">编辑</span>调整标题、用户故事与验收标准后再确认</li>
+              <li className="flex gap-2"><span className="shrink-0 font-medium text-red-500">驳回</span>关闭本单；「驳回重拆」会把整个线索连同原因交回产品专家重新拆分</li>
+              <li className="flex gap-2"><span className="shrink-0 font-medium text-slate-600">多选合并</span>把多个相关单合成一个（第一个所选为目标）</li>
+              <li className="flex gap-2"><span className="shrink-0 font-medium text-blue-600">查看详情</span>点击标题或「查看详情」进入需求详情页确认</li>
             </ul>
           </Panel>
         </div>

@@ -2,13 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Panel, btnCls } from "@/components/ui";
 
 // 系统参数 + 项目共享上下文编辑
 
 const input =
-  "rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950";
-const btn =
-  "rounded-lg bg-zinc-900 px-3 py-1.5 text-sm text-white disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900";
+  "rounded-lg border border-slate-300 px-3 py-2 text-[13px] focus:border-blue-500 focus:outline-none";
 
 export function SystemConfigPanel({ config }: { config: Record<string, string> }) {
   const router = useRouter();
@@ -36,17 +35,16 @@ export function SystemConfigPanel({ config }: { config: Record<string, string> }
   }
 
   return (
-    <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-      <h2 className="mb-3 font-medium">系统参数</h2>
+    <Panel title="系统参数">
       <div className="space-y-3">
         {fields.map((f) => (
-          <div key={f.key} className="flex flex-wrap items-center gap-2 text-sm">
+          <div key={f.key} className="flex flex-wrap items-center gap-2">
             <div className="min-w-44 flex-1">
-              <p>{f.label}</p>
-              <p className="text-[11px] text-zinc-400">{f.hint}</p>
+              <p className="text-[13px] text-slate-600">{f.label}</p>
+              <p className="text-[11px] text-slate-400">{f.hint}</p>
             </div>
             <input
-              className={`${input} w-36`}
+              className={`${input} w-36 tabular-nums`}
               defaultValue={config[f.key] ?? ""}
               placeholder="默认"
               onBlur={(e) => {
@@ -57,7 +55,7 @@ export function SystemConfigPanel({ config }: { config: Record<string, string> }
           </div>
         ))}
       </div>
-    </section>
+    </Panel>
   );
 }
 
@@ -99,9 +97,8 @@ export function ContextEditor({ projects }: { projects: { id: string; name: stri
   }
 
   return (
-    <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-      <h2 className="mb-1 font-medium">项目共享上下文</h2>
-      <p className="mb-3 text-xs text-zinc-400">
+    <Panel title="项目共享上下文">
+      <p className="-mt-1 mb-3 text-[12px] text-slate-400">
         docs/agent-context.md — 每个开发/测试 Agent 认领任务时都会读到这份内容
       </p>
       <div className="flex flex-wrap gap-2">
@@ -109,11 +106,11 @@ export function ContextEditor({ projects }: { projects: { id: string; name: stri
           <button
             key={p.id}
             onClick={() => open(p.id)}
-            className={`rounded-lg border px-3 py-1.5 text-sm ${
+            className={
               openId === p.id
-                ? "border-indigo-400 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300"
-                : "border-zinc-300 dark:border-zinc-700"
-            }`}
+                ? "inline-flex items-center justify-center rounded-lg border border-blue-300 bg-blue-50 px-2.5 py-1.5 text-[12px] font-medium text-blue-600"
+                : btnCls("secondary", "sm")
+            }
           >
             {p.name}
           </button>
@@ -122,19 +119,19 @@ export function ContextEditor({ projects }: { projects: { id: string; name: stri
       {openId && (
         <div className="mt-3 space-y-2">
           <textarea
-            className="min-h-48 w-full rounded-xl border border-zinc-300 px-3 py-2 font-mono text-xs dark:border-zinc-700 dark:bg-zinc-950"
+            className="min-h-48 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-[12px] focus:border-blue-500 focus:outline-none"
             value={content}
             onChange={(e) => setContent(e.target.value)}
             disabled={loading}
           />
           <div className="flex items-center gap-2">
-            <button onClick={save} disabled={loading} className={btn}>
+            <button onClick={save} disabled={loading} className={btnCls("primary", "sm")}>
               {loading ? "处理中…" : "保存并提交入仓"}
             </button>
-            {msg && <span className="text-xs text-zinc-500">{msg}</span>}
+            {msg && <span className="text-[12px] text-slate-500">{msg}</span>}
           </div>
         </div>
       )}
-    </section>
+    </Panel>
   );
 }

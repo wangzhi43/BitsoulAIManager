@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Panel, Chip, btnCls } from "@/components/ui";
 
 interface Project {
   id: string;
@@ -31,13 +32,8 @@ const ROLES = [
   { key: "TEST", label: "测试专家（用例生成）" },
 ];
 
-const box =
-  "rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900";
 const input =
-  "rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950";
-const btn =
-  "rounded-lg bg-zinc-900 px-3 py-1.5 text-sm text-white disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900";
-const btnGhost = "rounded-lg border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700";
+  "rounded-lg border border-slate-300 px-3 py-2 text-[13px] focus:border-blue-500 focus:outline-none";
 
 export function SettingsUI({
   projects,
@@ -113,19 +109,18 @@ export function SettingsUI({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* 项目 */}
-      <section className={box}>
-        <h2 className="mb-3 font-medium">项目</h2>
+      <Panel title="项目">
         <ul className="space-y-2">
           {projects.map((p) => (
-            <li key={p.id} className="flex items-center justify-between gap-2 text-sm">
+            <li key={p.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-100 bg-slate-50/50 p-3">
               <div className="min-w-0">
-                <p className="font-medium">{p.name}</p>
-                <p className="truncate text-xs opacity-50">{p.repoUrl}</p>
+                <p className="text-[13px] font-medium text-slate-700">{p.name}</p>
+                <p className="truncate text-[11px] text-slate-400">{p.repoUrl}</p>
               </div>
               <button
-                className={p.active ? btn : btnGhost}
+                className={btnCls(p.active ? "primary" : "secondary", "sm")}
                 disabled={busy}
                 onClick={async () => {
                   const url = p.active ? p.repoUrl : window.prompt("确认仓库地址（GitHub）", p.repoUrl);
@@ -142,24 +137,24 @@ export function SettingsUI({
             </li>
           ))}
         </ul>
-      </section>
+      </Panel>
 
       {/* LLM 供应商 */}
-      <section className={box}>
-        <h2 className="mb-3 font-medium">LLM 供应商</h2>
+      <Panel title="LLM 供应商">
         <ul className="mb-4 space-y-2">
           {providers.map((p) => (
-            <li key={p.id} className="rounded-xl border border-zinc-200 p-3 text-sm dark:border-zinc-800">
-              <div className="flex items-center justify-between">
-                <span className="font-medium">
-                  {p.name} <span className="text-xs opacity-50">{p.kind}</span>
+            <li key={p.id} className="rounded-lg border border-slate-200 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2 text-[13px] font-medium text-slate-700">
+                  {p.name} <Chip tone="slate">{p.kind}</Chip>
+                  {!p.enabled && <Chip tone="red">已停用</Chip>}
                 </span>
                 <div className="flex gap-2">
-                  <button className={btnGhost} onClick={() => testProvider(p.id)}>
+                  <button className={btnCls("secondary", "sm")} onClick={() => testProvider(p.id)}>
                     测试
                   </button>
                   <button
-                    className={btnGhost}
+                    className={btnCls(p.enabled ? "danger" : "secondary", "sm")}
                     disabled={busy}
                     onClick={async () => {
                       const ok = await json(`/api/admin/llm/providers/${p.id}`, "PATCH", {
@@ -172,12 +167,12 @@ export function SettingsUI({
                   </button>
                 </div>
               </div>
-              <p className="mt-1 text-xs opacity-60">模型：{p.models.join(", ")}</p>
-              {testResult[p.id] && <p className="mt-1 text-xs">{testResult[p.id]}</p>}
+              <p className="mt-1 text-[12px] text-slate-400">模型：{p.models.join(", ")}</p>
+              {testResult[p.id] && <p className="mt-1 text-[12px] text-slate-500">{testResult[p.id]}</p>}
             </li>
           ))}
           {providers.length === 0 && (
-            <p className="text-sm opacity-50">尚未配置供应商——拆解功能需要至少一个</p>
+            <p className="text-[13px] text-slate-400">尚未配置供应商——拆解功能需要至少一个</p>
           )}
         </ul>
 
@@ -215,15 +210,14 @@ export function SettingsUI({
             value={np.models}
             onChange={(e) => setNp({ ...np, models: e.target.value })}
           />
-          <button type="submit" disabled={busy} className={`${btn} sm:col-span-2`}>
+          <button type="submit" disabled={busy} className={`${btnCls("primary", "md")} sm:col-span-2`}>
             添加供应商
           </button>
         </form>
-      </section>
+      </Panel>
 
       {/* 专家角色模型配置 */}
-      <section className={box}>
-        <h2 className="mb-3 font-medium">专家 Agent 模型配置</h2>
+      <Panel title="专家 Agent 模型配置">
         <div className="space-y-3">
           {ROLES.map((r) => {
             const cfg = roleConfigs.find((c) => c.role === r.key);
@@ -240,7 +234,7 @@ export function SettingsUI({
             );
           })}
         </div>
-      </section>
+      </Panel>
     </div>
   );
 }
@@ -266,8 +260,8 @@ function RoleRow({
   const provider = providers.find((p) => p.id === providerId);
 
   return (
-    <div className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
-      <p className="mb-2 text-sm font-medium">{label}</p>
+    <div className="rounded-lg border border-slate-200 p-3">
+      <p className="mb-2 text-[13px] font-medium text-slate-700">{label}</p>
       <div className="flex flex-wrap gap-2">
         <select className={input} value={providerId} onChange={(e) => setProviderId(e.target.value)}>
           <option value="">选择供应商</option>
@@ -292,12 +286,12 @@ function RoleRow({
           <option value="high">high</option>
           <option value="xhigh">xhigh</option>
         </select>
-        <button className={btn} disabled={busy} onClick={() => onSave(role, providerId, model, effort)}>
+        <button className={btnCls("primary", "sm")} disabled={busy} onClick={() => onSave(role, providerId, model, effort)}>
           保存
         </button>
       </div>
       {cfg && (
-        <p className="mt-1 text-xs opacity-50">
+        <p className="mt-1.5 text-[11px] text-slate-400">
           当前：{providers.find((p) => p.id === cfg.providerId)?.name ?? "?"} / {cfg.model}
           {cfg.effort ? ` / ${cfg.effort}` : ""}
         </p>

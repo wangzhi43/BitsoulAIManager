@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Panel, btnCls } from "@/components/ui";
 
 const input =
-  "rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950";
+  "rounded-lg border border-slate-300 px-3 py-2 text-[13px] focus:border-blue-500 focus:outline-none";
 
 export function AgentAdmin({
   projects,
@@ -47,8 +48,7 @@ export function AgentAdmin({
   }
 
   return (
-    <section className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-      <h2 className="mb-3 font-medium">账号管理</h2>
+    <Panel title="账号管理">
       <form onSubmit={create} className="grid gap-2 sm:grid-cols-2">
         <input
           className={input}
@@ -68,11 +68,12 @@ export function AgentAdmin({
           <option value="TESTER">测试</option>
           <option value="BOTH">开发+测试</option>
         </select>
-        <div className="flex flex-wrap items-center gap-2 text-sm">
+        <div className="flex flex-wrap items-center gap-3 text-[13px] text-slate-600">
           {projects.map((p) => (
-            <label key={p.id} className="flex items-center gap-1">
+            <label key={p.id} className="flex items-center gap-1.5">
               <input
                 type="checkbox"
+                className="accent-blue-600"
                 checked={f.projectIds.includes(p.id)}
                 onChange={(e) =>
                   setF({
@@ -90,7 +91,7 @@ export function AgentAdmin({
         <button
           type="submit"
           disabled={busy || !f.username || f.password.length < 8 || f.projectIds.length === 0}
-          className="rounded-lg bg-zinc-900 px-3 py-2 text-sm text-white disabled:opacity-40 sm:col-span-2 dark:bg-zinc-100 dark:text-zinc-900"
+          className={`${btnCls("primary", "md")} sm:col-span-2`}
         >
           创建 Agent 账号
         </button>
@@ -103,13 +104,13 @@ export function AgentAdmin({
               key={a.id}
               disabled={busy}
               onClick={() => toggle(a.id, a.enabled)}
-              className="rounded-lg border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700"
+              className={btnCls(a.enabled ? "danger" : "secondary", "sm")}
             >
               {a.enabled ? `禁用 ${a.username}` : `启用 ${a.username}`}
             </button>
           ))}
         </div>
       )}
-    </section>
+    </Panel>
   );
 }

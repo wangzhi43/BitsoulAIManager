@@ -2,7 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { isDemoMode, DEMO_REQ_LIST } from "@/lib/demo";
 import { StatusChip, PriorityChip, STATUS_LABEL } from "@/components/status";
-import { PageShell, PageHeader } from "@/components/ui";
+import { PageShell, PageHeader, Panel, Table, Chip } from "@/components/ui";
 import type { ReqStatus } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -70,24 +70,19 @@ export default async function RequirementsPage({
     }));
   }
 
-  const statusCounts = new Map<string, number>();
-  rows.forEach((r) => statusCounts.set(r.status, (statusCounts.get(r.status) ?? 0) + 1));
-
   return (
     <PageShell>
-      <PageHeader title="需求列表" subtitle="全部需求的状态检索；点击行进入详情（时间线/验收操作）" />
+      <PageHeader title="需求列表" subtitle="全部需求的状态检索；点击标题进入详情（时间线/验收操作）" />
 
-      <div className="mb-4 flex flex-wrap gap-1.5">
+      <div className="mb-4 inline-flex flex-wrap items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
         {FILTERS.map((f) => {
           const active = (status ?? "") === f.key;
           return (
             <Link
               key={f.key}
               href={f.key ? `/requirements?status=${f.key}` : "/requirements"}
-              className={`rounded-full px-3 py-1.5 text-xs transition-colors ${
-                active
-                  ? "bg-indigo-600 font-medium text-white"
-                  : "border border-zinc-200 bg-white text-zinc-500 hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-900"
+              className={`rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors ${
+                active ? "bg-blue-600 text-white" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
               }`}
             >
               {f.label}
@@ -96,35 +91,49 @@ export default async function RequirementsPage({
         })}
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-        <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+      <Panel
+        title={status ? `「${STATUS_LABEL[status] ?? FILTERS.find((f) => f.key === status)?.label ?? status}」需求` : "全部需求"}
+        extra={<span className="text-[11px] text-slate-400">{rows.length} 条</span>}
+      >
+        <Table head={["编号", "需求", "项目 / 来源", "复杂度", "优先级", "状态", "更新时间"]}>
           {rows.map((r) => (
-            <li key={r.id}>
-              <Link
-                href={`/requirements/${r.id}`}
-                className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
-              >
-                <span className="w-16 shrink-0 font-mono text-xs text-zinc-400">REQ-{r.seq}</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{r.title}</span>
-                  <span className="mt-0.5 block text-[11px] text-zinc-400">
-                    {r.project ?? "未指定项目"}
-                    {r.customer ? ` · ${r.customer}` : ""} · {r.complexity} ·{" "}
-                    {r.updatedAt.toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                  </span>
-                </span>
+            <tr key={r.id} className="transition-colors hover:bg-slate-50">
+              <td className="py-2.5 pr-3 font-mono text-[11px] text-slate-400">REQ-{r.seq}</td>
+              <td className="max-w-[360px] py-2.5 pr-3">
+                <Link
+                  href={`/requirements/${r.id}`}
+                  className="block truncate text-[13px] font-medium text-slate-700 hover:text-blue-600 hover:underline"
+                >
+                  {r.title}
+                </Link>
+              </td>
+              <td className="py-2.5 pr-3 text-[12px] text-slate-500">
+                {r.project ?? <span className="text-slate-400">未指定项目</span>}
+                {r.customer && <span className="text-slate-400"> · {r.customer}</span>}
+              </td>
+              <td className="py-2.5 pr-3">
+                <Chip tone="slate">{r.complexity}</Chip>
+              </td>
+              <td className="py-2.5 pr-3">
                 <PriorityChip priority={r.priority} />
+              </td>
+              <td className="py-2.5 pr-3">
                 <StatusChip status={r.status} />
-              </Link>
-            </li>
+              </td>
+              <td className="py-2.5 text-right text-[12px] tabular-nums text-slate-400">
+                {r.updatedAt.toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+              </td>
+            </tr>
           ))}
           {rows.length === 0 && (
-            <li className="py-10 text-center text-sm text-zinc-400">
-              {status ? `没有「${STATUS_LABEL[status] ?? status}」状态的需求` : "暂无需求"}
-            </li>
+            <tr>
+              <td colSpan={7} className="py-10 text-center text-[13px] text-slate-400">
+                {status ? `没有「${STATUS_LABEL[status] ?? status}」状态的需求` : "暂无需求"}
+              </td>
+            </tr>
           )}
-        </ul>
-      </div>
+        </Table>
+      </Panel>
     </PageShell>
   );
 }

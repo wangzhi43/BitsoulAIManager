@@ -1,7 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Chip, btnCls } from "@/components/ui";
+import { PriorityChip } from "@/components/status";
+
+// 待确认列表：与需求详情页同风格的白卡列表
+// 每卡 = 标题（跳详情）+ 项目/来源元信息 + 用户故事 + 验收标准摘要 + 澄清问题 + 操作行
 
 interface Item {
   id: string;
@@ -10,6 +16,7 @@ interface Item {
   userStory: string;
   acceptance: string[];
   complexity: string;
+  priority: string | null;
   projectId: string | null;
   projectName: string | null;
   clarifications: { question: string; answer: string | null }[];
@@ -20,6 +27,12 @@ interface Props {
   items: Item[];
   projects: { id: string; name: string }[];
 }
+
+const COMPLEXITY: Record<string, { label: string; tone: "green" | "amber" | "red" }> = {
+  S: { label: "简单", tone: "green" },
+  M: { label: "中等", tone: "amber" },
+  L: { label: "复杂", tone: "red" },
+};
 
 export function ConfirmList({ items, projects }: Props) {
   const router = useRouter();
@@ -116,187 +129,194 @@ export function ConfirmList({ items, projects }: Props) {
   }
 
   if (items.length === 0) {
-    return <p className="py-10 text-center text-sm opacity-50">没有待确认的需求单</p>;
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white py-12 text-center shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+        <p className="text-[13px] text-slate-400">没有待确认的需求单</p>
+      </div>
+    );
   }
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2 text-sm">
+      <div className="flex items-center gap-2">
         <button
           onClick={() => {
             setSelectMode(!selectMode);
             setSelected([]);
           }}
-          className="rounded-lg border border-zinc-300 px-3 py-1.5 dark:border-zinc-700"
+          className={btnCls("secondary", "sm")}
         >
           {selectMode ? "取消多选" : "多选合并"}
         </button>
         {selectMode && (
-          <button
-            onClick={mergeSelected}
-            className="rounded-lg bg-zinc-900 px-3 py-1.5 text-white dark:bg-zinc-100 dark:text-zinc-900"
-          >
+          <button onClick={mergeSelected} className={btnCls("primary", "sm")}>
             合并所选（{selected.length}）
           </button>
         )}
+        {selectMode && <span className="text-[11px] text-slate-400">第一个所选为合并目标</span>}
       </div>
 
       <div className="grid gap-3 2xl:grid-cols-2">
-      {items.map((item) => (
-        <div
-          key={item.id}
-          className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
-        >
-          <div className="flex items-start gap-2">
-            {selectMode && (
-              <input
-                type="checkbox"
-                className="mt-1.5 h-4 w-4"
-                checked={selected.includes(item.id)}
-                onChange={(e) =>
-                  setSelected(
-                    e.target.checked ? [...selected, item.id] : selected.filter((x) => x !== item.id),
-                  )
-                }
-              />
-            )}
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-xs opacity-50">REQ-{item.seq}</span>
-                <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs dark:bg-zinc-800">
-                  {item.complexity}
-                </span>
-                <span className="text-xs opacity-50">
-                  {item.source.channel === "WECHAT" ? "微信" : "手动"}
-                  {item.source.customer ? ` · ${item.source.customer}` : ""}
-                  {item.source.sender ? ` · ${item.source.sender}` : ""}
-                </span>
-              </div>
-
-              {editing === item.id ? (
-                <div className="mt-2 space-y-2">
+        {items.map((item) => {
+          const cplx = COMPLEXITY[item.complexity] ?? { label: item.complexity, tone: "amber" as const };
+          const openClarify = item.clarifications.filter((c) => !c.answer);
+          return (
+            <div
+              key={item.id}
+              className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
+            >
+              <div className="flex items-start gap-2.5">
+                {selectMode && (
                   <input
-                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
-                    value={draft.title}
-                    onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+                    type="checkbox"
+                    className="mt-1 h-4 w-4 accent-blue-600"
+                    checked={selected.includes(item.id)}
+                    onChange={(e) =>
+                      setSelected(e.target.checked ? [...selected, item.id] : selected.filter((x) => x !== item.id))
+                    }
                   />
-                  <textarea
-                    className="min-h-20 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
-                    value={draft.userStory}
-                    onChange={(e) => setDraft({ ...draft, userStory: e.target.value })}
-                  />
-                  <textarea
-                    className="min-h-24 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
-                    placeholder="验收标准，每行一条"
-                    value={draft.acceptance}
-                    onChange={(e) => setDraft({ ...draft, acceptance: e.target.value })}
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => saveEdit(item)}
-                      disabled={busy === item.id}
-                      className="rounded-lg bg-zinc-900 px-3 py-1.5 text-sm text-white dark:bg-zinc-100 dark:text-zinc-900"
-                    >
-                      保存
-                    </button>
-                    <button
-                      onClick={() => setEditing(null)}
-                      className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700"
-                    >
-                      取消
-                    </button>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="font-mono text-[11px] tabular-nums text-slate-400">REQ-{item.seq}</span>
+                    <Chip tone={cplx.tone}>{cplx.label}</Chip>
+                    {item.priority && <PriorityChip priority={item.priority} />}
+                    {item.clarifications.length > 0 && <Chip tone="amber">待澄清 {openClarify.length || item.clarifications.length}</Chip>}
                   </div>
-                </div>
-              ) : (
-                <>
-                  <h2 className="mt-1 font-medium">{item.title}</h2>
-                  <p className="mt-1 whitespace-pre-wrap text-sm opacity-80">{item.userStory}</p>
-                  <ul className="mt-2 space-y-1 text-sm">
-                    {item.acceptance.map((a, i) => (
-                      <li key={i} className="flex gap-1.5">
-                        <span className="opacity-40">☐</span>
-                        <span>{a}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  {item.clarifications.length > 0 && (
-                    <div className="mt-2 rounded-lg bg-amber-50 p-2.5 text-sm dark:bg-amber-950/40">
-                      <p className="mb-1 flex items-center justify-between text-xs font-medium text-amber-700 dark:text-amber-300">
-                        待澄清问题
-                        <button
-                          onClick={() => clarifyMessage(item)}
-                          disabled={busy === item.id}
-                          className="rounded-md border border-amber-300 px-2 py-0.5 text-[11px] font-normal hover:bg-amber-100 dark:border-amber-800"
-                        >
-                          生成微信文案并发送
+
+                  {editing === item.id ? (
+                    <div className="mt-2 space-y-2.5">
+                      <input
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] text-slate-700 focus:border-blue-400 focus:outline-none"
+                        value={draft.title}
+                        onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+                      />
+                      <textarea
+                        className="min-h-20 w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] text-slate-700 focus:border-blue-400 focus:outline-none"
+                        value={draft.userStory}
+                        onChange={(e) => setDraft({ ...draft, userStory: e.target.value })}
+                      />
+                      <textarea
+                        className="min-h-24 w-full rounded-lg border border-slate-300 px-3 py-2 text-[13px] text-slate-700 focus:border-blue-400 focus:outline-none"
+                        placeholder="验收标准，每行一条"
+                        value={draft.acceptance}
+                        onChange={(e) => setDraft({ ...draft, acceptance: e.target.value })}
+                      />
+                      <div className="flex gap-2">
+                        <button onClick={() => saveEdit(item)} disabled={busy === item.id} className={btnCls("primary", "sm")}>
+                          保存
                         </button>
+                        <button onClick={() => setEditing(null)} className={btnCls("secondary", "sm")}>
+                          取消
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <Link
+                        href={`/requirements/${item.id}`}
+                        className="mt-1 block text-[15px] font-semibold leading-snug text-slate-800 hover:text-blue-600"
+                      >
+                        {item.title}
+                      </Link>
+                      <p className="mt-0.5 text-[12px] text-slate-400">
+                        {item.projectName ?? "未指定项目"} · 来源：{item.source.channel === "WECHAT" ? "微信反馈" : "手动导入"}
+                        {item.source.customer ? ` · ${item.source.customer}` : ""}
+                        {item.source.sender ? ` · ${item.source.sender}` : ""}
                       </p>
-                      {item.clarifications.map((c, i) => (
-                        <p key={i} className="text-amber-800 dark:text-amber-200">
-                          · {c.question}
-                        </p>
-                      ))}
+                      <p className="mt-2 line-clamp-2 whitespace-pre-wrap text-[13px] leading-relaxed text-slate-600">{item.userStory}</p>
+
+                      <p className="mt-2.5 text-[11px] font-medium text-slate-400">验收标准</p>
+                      <ol className="mt-1 space-y-1">
+                        {item.acceptance.slice(0, 3).map((a, i) => (
+                          <li key={i} className="flex gap-1.5 text-[13px] text-slate-600">
+                            <span className="tabular-nums text-slate-400">{i + 1}.</span>
+                            <span>{a}</span>
+                          </li>
+                        ))}
+                      </ol>
+                      {item.acceptance.length > 3 && (
+                        <p className="mt-1 text-[12px] text-slate-400">…等 {item.acceptance.length} 条，详情页查看全部</p>
+                      )}
+
+                      {item.clarifications.length > 0 && (
+                        <div className="mt-2.5 rounded-lg border border-amber-100 bg-amber-50/60 p-2.5">
+                          <div className="mb-1 flex items-center justify-between gap-2">
+                            <p className="text-[12px] font-medium text-amber-700">澄清问题（{item.clarifications.length}）</p>
+                            <button
+                              onClick={() => clarifyMessage(item)}
+                              disabled={busy === item.id}
+                              className="text-[12px] font-medium text-blue-600 hover:underline disabled:opacity-50"
+                            >
+                              生成微信澄清文案
+                            </button>
+                          </div>
+                          {item.clarifications.map((c, i) => (
+                            <p key={i} className="flex items-start justify-between gap-2 text-[12px] leading-relaxed text-amber-800">
+                              <span>
+                                {i + 1}. {c.question}
+                              </span>
+                              <span className="mt-0.5 shrink-0">
+                                <Chip tone={c.answer ? "green" : "amber"}>{c.answer ? "已回复" : "待确认"}</Chip>
+                              </span>
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {editing !== item.id && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+                      <select
+                        className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-[12px] text-slate-700 focus:border-blue-400 focus:outline-none"
+                        value={projectChoice[item.id] ?? item.projectId ?? ""}
+                        onChange={(e) => setProjectChoice({ ...projectChoice, [item.id]: e.target.value })}
+                      >
+                        <option value="" disabled>
+                          选择项目
+                        </option>
+                        {projects.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button onClick={() => confirm(item)} disabled={busy === item.id} className={btnCls("primary", "sm")}>
+                        确认进入待开发
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditing(item.id);
+                          setDraft({
+                            title: item.title,
+                            userStory: item.userStory,
+                            acceptance: item.acceptance.join("\n"),
+                          });
+                        }}
+                        className={btnCls("secondary", "sm")}
+                      >
+                        编辑
+                      </button>
+                      <button onClick={() => reject(item, false)} disabled={busy === item.id} className={btnCls("danger", "sm")}>
+                        驳回
+                      </button>
+                      <button onClick={() => reject(item, true)} disabled={busy === item.id} className={btnCls("danger", "sm")}>
+                        驳回重拆
+                      </button>
+                      <Link
+                        href={`/requirements/${item.id}`}
+                        className="ml-auto text-[12px] font-medium text-blue-600 hover:underline"
+                      >
+                        查看详情 →
+                      </Link>
                     </div>
                   )}
-                </>
-              )}
-
-              {editing !== item.id && (
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <select
-                    className="rounded-lg border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
-                    value={projectChoice[item.id] ?? item.projectId ?? ""}
-                    onChange={(e) => setProjectChoice({ ...projectChoice, [item.id]: e.target.value })}
-                  >
-                    <option value="" disabled>
-                      选择项目
-                    </option>
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={() => confirm(item)}
-                    disabled={busy === item.id}
-                    className="rounded-lg bg-green-600 px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40"
-                  >
-                    确认
-                  </button>
-                  <button
-                    onClick={() => {
-                      setEditing(item.id);
-                      setDraft({
-                        title: item.title,
-                        userStory: item.userStory,
-                        acceptance: item.acceptance.join("\n"),
-                      });
-                    }}
-                    className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700"
-                  >
-                    编辑
-                  </button>
-                  <button
-                    onClick={() => reject(item, false)}
-                    disabled={busy === item.id}
-                    className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-600 dark:border-red-900"
-                  >
-                    驳回
-                  </button>
-                  <button
-                    onClick={() => reject(item, true)}
-                    disabled={busy === item.id}
-                    className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-600 dark:border-red-900"
-                  >
-                    驳回重拆
-                  </button>
                 </div>
-              )}
+              </div>
             </div>
-          </div>
-        </div>
-      ))}
+          );
+        })}
       </div>
     </div>
   );

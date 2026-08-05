@@ -38,28 +38,28 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-gradient-to-b from-indigo-50 via-zinc-50 to-zinc-100 p-6 dark:from-zinc-950 dark:via-zinc-950 dark:to-zinc-900">
+    <main className="flex min-h-dvh items-center justify-center bg-[#0b1526] p-6">
       <form
         onSubmit={submit}
-        className="w-full max-w-sm space-y-5 rounded-3xl border border-zinc-200/80 bg-white p-7 shadow-lg shadow-zinc-200/50 dark:border-zinc-800 dark:bg-zinc-900 dark:shadow-none"
+        className="w-full max-w-sm space-y-5 rounded-2xl border border-slate-200 bg-white p-8 shadow-2xl shadow-black/30"
       >
         <div className="text-center">
-          <span className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 text-xl font-bold text-white">
+          <span className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 text-xl font-bold text-white">
             B
           </span>
-          <h1 className="text-2xl font-semibold tracking-tight">BitSoul AI Manager</h1>
-          <p className="mt-1 text-sm text-zinc-400">多 Agent 自动化项目管理平台</p>
+          <h1 className="text-[22px] font-bold tracking-tight text-slate-900">AI 项目平台</h1>
+          <p className="mt-1 text-[13px] text-slate-400">BitSoul PM · 多 Agent 自动化项目管理</p>
         </div>
         <div className="space-y-3">
           <input
-            className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-base outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900"
+            className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-[15px] outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
             placeholder="用户名"
             autoComplete="username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
           />
           <input
-            className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-base outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900"
+            className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-[15px] outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
             placeholder="密码"
             type="password"
             autoComplete="current-password"
@@ -67,11 +67,11 @@ export default function LoginPage() {
             onChange={(e) => setPassword(e.target.value)}
           />
         </div>
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-[13px] text-red-600">{error}</p>}
         <button
           type="submit"
           disabled={loading || !username || !password}
-          className="w-full rounded-xl bg-indigo-600 py-3 text-base font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-40"
+          className="w-full rounded-lg bg-blue-600 py-3 text-[15px] font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-40"
         >
           {loading ? "登录中…" : "登录"}
         </button>

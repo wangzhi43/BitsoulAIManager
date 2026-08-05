@@ -1,18 +1,29 @@
 @import "tailwindcss";
 
-:root {
-  --background: #fafafa;
-  --foreground: #18181b;
-}
+/* 参考图为浅色主题 + 深色侧边栏：dark: 变体改挂 .dark 类（全站不启用），锁定浅色 */
+@custom-variant dark (&:where(.dark, .dark *));
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+:root {
+  --background: #f2f4f8;
+  --foreground: #1a2233;
+  --sidebar: #0b1526;
+  --primary: #2563eb;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
+}
+
+/* 细滚动条，贴近参考图的轻量观感 */
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #d3d9e3;
+  border-radius: 3px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
 }

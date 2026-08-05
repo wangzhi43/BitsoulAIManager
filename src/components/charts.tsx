@@ -2,7 +2,7 @@
 // 遵循 dataviz 规范：2px 线、柱端 4px 圆角贴基线、留白分隔、数值直接标注、
 // 网格线弱化、文字用墨色而非系列色。配色已通过 validate_palette 六项检查。
 
-export const CHART_COLORS = ["#6366F1", "#14B8A6", "#F59E0B", "#F43F5E", "#0EA5E9"];
+export const CHART_COLORS = ["#2563EB", "#14B8A6", "#F59E0B", "#F43F5E", "#8B5CF6"];
 
 function areaPath(values: number[], w: number, h: number, max: number, pad = 2): { line: string; area: string } {
   const n = values.length;
@@ -74,13 +74,13 @@ export function AreaTrend({
       <div className="mt-1 flex items-center justify-between">
         <div className="flex gap-3">
           {series.map((s, i) => (
-            <span key={s.name} className="inline-flex items-center gap-1.5 text-[11px] text-zinc-500">
+            <span key={s.name} className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
               <span className="h-2 w-2 rounded-full" style={{ background: s.color ?? CHART_COLORS[i % CHART_COLORS.length] }} />
               {s.name}
             </span>
           ))}
         </div>
-        <span className="text-[10px] text-zinc-400">
+        <span className="text-[10px] text-slate-400">
           {labels[0]} — {labels[labels.length - 1]}
         </span>
       </div>
@@ -138,7 +138,7 @@ export function Donut({
       <ul className="min-w-0 flex-1 space-y-1.5">
         {data.map((d, i) => (
           <li key={d.name} className="flex items-center justify-between gap-2 text-[12px]">
-            <span className="inline-flex min-w-0 items-center gap-1.5 text-zinc-500">
+            <span className="inline-flex min-w-0 items-center gap-1.5 text-slate-500">
               <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: d.color ?? CHART_COLORS[i % CHART_COLORS.length] }} />
               <span className="truncate">{d.name}</span>
             </span>
@@ -204,13 +204,13 @@ export function HBarList({ data, color = CHART_COLORS[0] }: { data: { label: str
       {data.map((d) => (
         <li key={d.label} className="text-[12px]">
           <div className="mb-0.5 flex items-center justify-between gap-2">
-            <span className="truncate text-zinc-500">
+            <span className="truncate text-slate-500">
               {d.label}
-              {d.hint && <span className="ml-1 text-zinc-300 dark:text-zinc-600">{d.hint}</span>}
+              {d.hint && <span className="ml-1 text-slate-300">{d.hint}</span>}
             </span>
             <span className="font-medium tabular-nums">{d.value}</span>
           </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
             <div className="h-full rounded-full" style={{ width: `${(d.value / max) * 100}%`, background: color }} />
           </div>
         </li>

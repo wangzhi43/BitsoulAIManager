@@ -63,7 +63,7 @@ const TABS = [
 export function BottomNav() {
   const pathname = usePathname();
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-200/80 bg-white/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/90">
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md">
       <div className="mx-auto flex max-w-3xl">
         {TABS.map((t) => {
           const active = pathname === t.href || (t.href === "/more" && ["/inbox", "/agents", "/reports", "/settings"].includes(pathname));
@@ -73,8 +73,8 @@ export function BottomNav() {
               href={t.href}
               className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] transition-colors ${
                 active
-                  ? "font-medium text-indigo-600 dark:text-indigo-400"
-                  : "text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+                  ? "font-medium text-blue-600"
+                  : "text-slate-400 hover:text-slate-600"
               }`}
             >
               {t.icon}

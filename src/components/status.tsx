@@ -17,37 +17,37 @@ export const STATUS_LABEL: Record<string, string> = {
 };
 
 const STATUS_STYLE: Record<string, string> = {
-  PENDING_CONFIRM: "bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300",
-  READY: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
-  DEVELOPING: "bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-400",
-  PENDING_TEST: "bg-teal-100 text-teal-700 dark:bg-teal-950/60 dark:text-teal-400",
-  TESTING: "bg-teal-100 text-teal-700 dark:bg-teal-950/60 dark:text-teal-400",
-  REVIEWING: "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400",
-  PENDING_ACCEPT: "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400",
-  ACCEPTED: "bg-green-100 text-green-700 dark:bg-green-950/60 dark:text-green-400",
-  CLOSED: "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500",
-  ON_HOLD: "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500",
+  PENDING_CONFIRM: "bg-indigo-50 text-indigo-600",
+  READY: "bg-slate-100 text-slate-600",
+  DEVELOPING: "bg-blue-50 text-blue-600",
+  PENDING_TEST: "bg-teal-50 text-teal-600",
+  TESTING: "bg-teal-50 text-teal-600",
+  REVIEWING: "bg-amber-50 text-amber-600",
+  PENDING_ACCEPT: "bg-amber-50 text-amber-600",
+  ACCEPTED: "bg-green-50 text-green-600",
+  CLOSED: "bg-slate-100 text-slate-400",
+  ON_HOLD: "bg-slate-100 text-slate-400",
 };
 
 export function StatusChip({ status }: { status: string }) {
   return (
-    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_STYLE[status] ?? "bg-zinc-100 text-zinc-500 dark:bg-zinc-800"}`}>
+    <span className={`whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium ${STATUS_STYLE[status] ?? "bg-slate-100 text-slate-500"}`}>
       {STATUS_LABEL[status] ?? status}
     </span>
   );
 }
 
 const PRIORITY_STYLE: Record<string, string> = {
-  P0: "bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-400",
-  P1: "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400",
-  P2: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
-  P3: "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500",
+  P0: "bg-red-500 text-white",
+  P1: "bg-amber-100 text-amber-700",
+  P2: "bg-slate-100 text-slate-600",
+  P3: "bg-slate-100 text-slate-400",
 };
 
 export function PriorityChip({ priority }: { priority: string | null }) {
   if (!priority) return null;
   return (
-    <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${PRIORITY_STYLE[priority] ?? ""}`}>
+    <span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${PRIORITY_STYLE[priority] ?? ""}`}>
       {priority}
     </span>
   );

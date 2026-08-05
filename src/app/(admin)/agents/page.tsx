@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { isDemoMode, DEMO } from "@/lib/demo";
 import { AgentAdmin } from "./ui";
-import { PageShell, PageHeader, StatStrip, Panel } from "@/components/ui";
+import { PageShell, PageHeader, StatStrip, Panel, Chip } from "@/components/ui";
 import { Donut, HBarList, CHART_COLORS } from "@/components/charts";
 
 export const dynamic = "force-dynamic";
@@ -89,95 +89,89 @@ export default async function AgentsPage() {
 
   return (
     <PageShell>
-      <PageHeader title="Agent" subtitle="外部终端智能体的账号、当前任务与产出" />
+      <PageHeader title="智能体管理" subtitle="外部终端智能体的账号、当前任务与产出" />
       <StatStrip
         items={[
           { label: "账号总数", value: rows.length, sub: `${enabled} 个启用` },
           { label: "1 小时内活跃", value: activeNow, tone: "green", sub: "有心跳/请求" },
-          { label: "执行中", value: working, tone: working > 0 ? "indigo" : "default", sub: "已认领任务" },
+          { label: "执行中", value: working, tone: working > 0 ? "blue" : "default", sub: "已认领任务" },
           { label: "历史完成", value: rows.reduce((s2, a) => s2 + a.devCount + a.testCount, 0), sub: "开发+测试任务数" },
         ]}
       />
-      <div className="grid gap-3 xl:grid-cols-4">
-      <div className="space-y-3 xl:col-span-3">
-      <section className="space-y-2.5">
-        {rows.map((a) => (
-          <div
-            key={a.id}
-            className="rounded-2xl border border-zinc-200 bg-white p-3.5 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className={`flex h-8 w-8 items-center justify-center rounded-lg text-xs font-semibold text-white ${
-                  a.role === "TESTER" ? "bg-teal-500" : a.role === "BOTH" ? "bg-amber-500" : "bg-indigo-500"
-                }`}
-              >
-                {a.username.slice(0, 2).toUpperCase()}
-              </span>
-              <span className="font-medium">{a.username}</span>
-              <span className="rounded-md bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                {ROLE_LABEL[a.role] ?? a.role}
-              </span>
-              <span
-                className={`inline-flex items-center gap-1 text-xs ${a.enabled ? "text-green-600" : "text-red-500"}`}
-              >
-                <span className={`h-1.5 w-1.5 rounded-full ${a.enabled ? "bg-green-500" : "bg-red-400"}`} />
-                {a.enabled ? "启用" : "禁用"}
-              </span>
-              <span className="text-xs text-zinc-400">
-                开发 {a.devCount} / 测试 {a.testCount}
-                {a.lastSeenAt ? ` · 活跃于 ${a.lastSeenAt.toLocaleString("zh-CN")}` : " · 从未登录"}
-              </span>
+      <div className="grid items-start gap-4 xl:grid-cols-4">
+        <div className="space-y-4 xl:col-span-3">
+          <Panel title="Agent 列表" extra={<span className="text-[11px] text-slate-400">{rows.length} 个账号</span>}>
+            <div className="space-y-2.5">
+              {rows.map((a) => (
+                <div key={a.id} className="rounded-lg border border-slate-100 bg-slate-50/50 p-3 transition-colors hover:bg-slate-50">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`flex h-8 w-8 items-center justify-center rounded-lg text-[11px] font-semibold text-white ${
+                        a.role === "TESTER" ? "bg-teal-500" : a.role === "BOTH" ? "bg-amber-500" : "bg-blue-600"
+                      }`}
+                    >
+                      {a.username.slice(0, 2).toUpperCase()}
+                    </span>
+                    <span className="text-[13px] font-semibold text-slate-800">{a.username}</span>
+                    <Chip tone="slate">{ROLE_LABEL[a.role] ?? a.role}</Chip>
+                    <span className={`inline-flex items-center gap-1 text-[11px] font-medium ${a.enabled ? "text-green-600" : "text-red-500"}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${a.enabled ? "bg-green-500" : "bg-red-400"}`} />
+                      {a.enabled ? "启用" : "禁用"}
+                    </span>
+                    <span className="text-[11px] tabular-nums text-slate-400">
+                      开发 {a.devCount} / 测试 {a.testCount}
+                      {a.lastSeenAt ? ` · 活跃于 ${a.lastSeenAt.toLocaleString("zh-CN")}` : " · 从未登录"}
+                    </span>
+                  </div>
+                  {a.current.length > 0 && (
+                    <ul className="mt-1.5 space-y-0.5 pl-10 text-[12px] text-slate-500">
+                      {a.current.map((c, i) => (
+                        <li key={i}>{c}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+              {rows.length === 0 && (
+                <p className="rounded-lg border border-dashed border-slate-300 py-8 text-center text-[13px] text-slate-400">
+                  尚无 Agent 账号，在下方创建
+                </p>
+              )}
             </div>
-            {a.current.length > 0 && (
-              <ul className="mt-1.5 space-y-0.5 pl-10 text-xs text-zinc-500">
-                {a.current.map((c, i) => (
-                  <li key={i}>{c}</li>
+          </Panel>
+
+          <AgentAdmin
+            projects={projects}
+            agents={rows.map((a) => ({ id: a.id, username: a.username, enabled: a.enabled }))}
+          />
+        </div>
+
+        <div className="space-y-4">
+          <Panel title="完成量排行">
+            {rank.length > 0 ? <HBarList data={rank} color={CHART_COLORS[1]} /> : <p className="py-4 text-center text-[12px] text-slate-400">暂无数据</p>}
+          </Panel>
+          <Panel title="角色构成">
+            {byRole.length > 0 ? <Donut data={byRole} centerLabel="Agent" size={104} /> : <p className="py-4 text-center text-[12px] text-slate-400">暂无数据</p>}
+          </Panel>
+          <Panel title="近 7 天 LLM 用量" extra={<span className="text-[11px] text-slate-400">专家 Agent</span>}>
+            {usage.length === 0 ? (
+              <p className="text-[12px] text-slate-400">暂无调用</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {usage.map((u) => (
+                  <li key={u.role} className="flex items-center justify-between text-[12px]">
+                    <span className="text-slate-500">
+                      {u.role === "PRODUCT" ? "产品专家" : u.role === "PM" ? "项目管理专家" : u.role === "TEST" ? "测试专家" : u.role}
+                    </span>
+                    <span className="tabular-nums text-slate-600">
+                      输入 {u.input.toLocaleString()} · 输出 {u.output.toLocaleString()}
+                    </span>
+                  </li>
                 ))}
               </ul>
             )}
-          </div>
-        ))}
-        {rows.length === 0 && (
-          <p className="rounded-2xl border border-dashed border-zinc-300 py-8 text-center text-sm text-zinc-400 dark:border-zinc-700">
-            尚无 Agent 账号，在下方创建
-          </p>
-        )}
-      </section>
-
-      <AgentAdmin
-        projects={projects}
-        agents={rows.map((a) => ({ id: a.id, username: a.username, enabled: a.enabled }))}
-      />
-      </div>
-
-      <div className="space-y-3">
-      <Panel title="完成量排行">
-        {rank.length > 0 ? <HBarList data={rank} color={CHART_COLORS[1]} /> : <p className="py-4 text-center text-xs text-zinc-400">暂无数据</p>}
-      </Panel>
-      <Panel title="角色构成">
-        {byRole.length > 0 ? <Donut data={byRole} centerLabel="Agent" size={104} /> : <p className="py-4 text-center text-xs text-zinc-400">暂无数据</p>}
-      </Panel>
-      <section className="rounded-2xl border border-zinc-200 bg-white p-4 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-        <h2 className="mb-2 font-medium">近 7 天 LLM 用量（专家 Agent）</h2>
-        {usage.length === 0 ? (
-          <p className="text-xs text-zinc-400">暂无调用</p>
-        ) : (
-          <ul className="space-y-1.5">
-            {usage.map((u) => (
-              <li key={u.role} className="flex items-center justify-between text-xs">
-                <span className="text-zinc-500">
-                  {u.role === "PRODUCT" ? "产品专家" : u.role === "PM" ? "项目管理专家" : u.role === "TEST" ? "测试专家" : u.role}
-                </span>
-                <span className="tabular-nums text-zinc-600 dark:text-zinc-300">
-                  输入 {u.input.toLocaleString()} · 输出 {u.output.toLocaleString()}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-      </div>
+          </Panel>
+        </div>
       </div>
     </PageShell>
   );
