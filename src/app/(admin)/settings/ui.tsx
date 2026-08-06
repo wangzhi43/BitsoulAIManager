@@ -176,6 +176,38 @@ export function SettingsUI({
           )}
         </ul>
 
+        {/* 常用供应商一键预填:选择后只需粘贴 API Key */}
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <span className="text-[12px] text-slate-400">快速接入：</span>
+          <button
+            type="button"
+            className={btnCls("secondary", "sm")}
+            onClick={() =>
+              setNp({ name: "DeepSeek", kind: "OPENAI_COMPAT", baseUrl: "https://api.deepseek.com", apiKey: "", models: "deepseek-v4-flash, deepseek-v4-pro" })
+            }
+          >
+            DeepSeek
+          </button>
+          <button
+            type="button"
+            className={btnCls("secondary", "sm")}
+            onClick={() =>
+              setNp({ name: "anthropic", kind: "ANTHROPIC_SDK", baseUrl: "", apiKey: "", models: "claude-sonnet-5, claude-opus-5" })
+            }
+          >
+            Anthropic
+          </button>
+          <button
+            type="button"
+            className={btnCls("secondary", "sm")}
+            onClick={() =>
+              setNp({ name: "Qwen", kind: "OPENAI_COMPAT", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", apiKey: "", models: "qwen-max, qwen-plus" })
+            }
+          >
+            通义千问
+          </button>
+          <span className="text-[11px] text-slate-300">点击预填,粘贴 API Key 后「添加供应商」即完成接入</span>
+        </div>
         <form onSubmit={addProvider} className="grid gap-2 sm:grid-cols-2">
           <input
             className={input}

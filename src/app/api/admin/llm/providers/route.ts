@@ -56,7 +56,22 @@ export async function POST(req: NextRequest) {
       models: d.models,
     },
   });
+  // 便捷接入:尚未配置模型的专家角色自动指向新供应商的首个模型(可在设置页随时改)
+  const roles = ["PRODUCT", "PM", "TEST"] as const;
+  const existingConfigs = await prisma.agentRoleModelConfig.findMany({ select: { role: true } });
+  const configured = new Set(existingConfigs.map((c) => c.role));
+  const autoFilled: string[] = [];
+  for (const role of roles) {
+    if (!configured.has(role)) {
+      await prisma.agentRoleModelConfig.create({ data: { role, providerId: p.id, model: d.models[0] } });
+      autoFilled.push(role);
+    }
+  }
+
   const adminUser = await currentAdmin();
   await audit(`admin:${adminUser?.id}`, "create-llm-provider", d.name, d.kind);
-  return apiOk({ id: p.id }, 201);
+  if (autoFilled.length > 0) {
+    await audit(`admin:${adminUser?.id}`, "auto-config-expert-roles", autoFilled.join(","), `${d.name}/${d.models[0]}`);
+  }
+  return apiOk({ id: p.id, autoConfiguredRoles: autoFilled }, 201);
 }

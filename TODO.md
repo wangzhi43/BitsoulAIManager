@@ -1,11 +1,12 @@
 # TODO.md
 
 ## 当前任务
-按 0806 新参考图迭代了总览页与执行中心(改动在本地工作区,未提交未部署),等管理员本地看效果确认后再推线上。
+进入线上正式测试阶段。0806 迭代已上线(b434289,健康检查通过)。管理员按配置清单完成线上配置后,开始端到端测试(DEPLOY.md §8)。
 
 ## 步骤
-- [x] 0806 新参考图迭代:dashboard 重排(待处理事项卡+快捷操作宫格、健康卡趋势线+四指标、项目关键指标对比 GroupedBars、项目进度趋势、AI 每日进度趋势、资源使用、项目类型分布、日报摘要);pools 工具栏改「视图设置」;新增 charts.tsx GroupedBars;本地截图目检通过
-- [ ] 管理员本地验收后:commit + push + 云助手部署
+- [x] 0806 新参考图迭代 + pools 看板满宽修复,本地目检通过,commit b434289 push + 云助手部署 + 健康检查通过(2026-08-06)
+- [ ] 管理员线上配置:LLM 供应商 Key + 三专家角色选模型(设置页);GITHUB_BOT_PAT 进服务器 .env + 重启;三个业务项目 push GitHub + 设置页启用;创建 Agent 账号(更多页);改 admin 弱密码;微信桥(可后置,先用手动导入测)
+- [ ] 端到端正式测试:采集→拆解→确认→任务池→Agent 开发→测试→验收→合并→日报
 - [x] 本地开发环境(方案一,管理员批准):OrbStack 安装、本地 .env(随机密钥,gitignore)、compose 起 postgres/redis(docker-compose.override.yml 本地暴露 5432/6379,已 gitignore)、migrate + seed(admin/admin123)、npm run dev(localhost:3100)
 - [x] Playwright 截图目检:真实空库模式 + 展示模式全页截图,dashboard/inbox/详情/branches/pools 均与参考图逐区块一致
 - [x] 目检发现并修复:branches 空库只剩空态、pools 空库看板无卡片 → 增加 MOCK 空库回退(58a5973),写操作在 mock 数据上降级提示

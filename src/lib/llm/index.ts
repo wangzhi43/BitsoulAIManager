@@ -108,11 +108,16 @@ class OpenAICompatClient implements LlmClient {
   ) {}
 
   async complete(req: CompleteRequest): Promise<CompleteResult> {
+    // DeepSeek 等 json_object 模式要求提示词包含 "json" 字样与目标结构示例,
+    // 且不支持 json_schema —— 把 schema 附进 system 提示保证结构化输出可用
+    const system = req.schema
+      ? `${req.system}\n\n输出要求：仅输出一个合法的 json 对象，不要输出任何其他文字或代码块标记。json 必须严格符合以下 JSON Schema：\n${JSON.stringify(req.schema)}`
+      : req.system;
     const body = {
       model: this.model,
       max_tokens: req.maxTokens ?? 8000,
       messages: [
-        { role: "system", content: req.system },
+        { role: "system", content: system },
         ...req.messages.map((m) => ({
           role: m.role,
           content: m.content
