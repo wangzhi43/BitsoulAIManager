@@ -36,9 +36,9 @@ async function main() {
       description: "BitSoul 官网（Python 后端 + 前端）",
     },
     {
-      name: "minsheng-worklog-mp",
-      repoUrl: "git@github.com:wangzhi43/minsheng-worklog-mp.git",
-      description: "民生理财工作管理微信小程序",
+      name: "BitsoulAIManager",
+      repoUrl: "git@github.com:wangzhi43/BitsoulAIManager.git",
+      description: "BitSoul AI Manager 平台自身（自举管理）",
     },
   ];
   for (const p of projects) {

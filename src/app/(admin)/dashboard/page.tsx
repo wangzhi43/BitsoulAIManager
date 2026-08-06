@@ -223,8 +223,9 @@ export default async function DashboardPage() {
 
   // 项目健康度：真实项目按序,MOCK 指标兜底
   const projectList = s.projects.length > 0 ? s.projects : MOCK.healthNames.map((n, i) => ({ id: String(i), name: n, active: true, pendingConfirm: 0, developing: 0, testing: 0, pendingAccept: 0, conflicts: MOCK.health[i].blocked }));
-  const healthCards = projectList.slice(0, 3).map((p, i) => {
-    const m = MOCK.health[Math.min(i, MOCK.health.length - 1)];
+  // 健康卡渲染全部项目(网格自动换行);mock 指标按索引循环兜底
+  const healthCards = projectList.map((p, i) => {
+    const m = MOCK.health[i % MOCK.health.length];
     const load = p.pendingConfirm + p.developing + p.testing + p.pendingAccept;
     const score = hasReal && load + p.conflicts > 0 ? Math.max(5, Math.min(100, 100 - p.conflicts * 25 - p.pendingConfirm * 4)) : m.score;
     const progress = hasReal && load > 0 ? Math.round(((p.testing + p.pendingAccept) / Math.max(load, 1)) * 100) : m.progress;
@@ -263,8 +264,9 @@ export default async function DashboardPage() {
         }))
       : MOCK.agentFeed;
 
-  const trendNames = projectList.slice(0, 3).map((p) => p.name);
-  const trendColors = ["#16A34A", "#F59E0B", "#EF4444"];
+  // 图表区最多取前 6 个项目保证可读性(健康卡不受限)
+  const chartProjects = projectList.slice(0, 6);
+  const trendColors = ["#16A34A", "#F59E0B", "#EF4444", "#2563EB", "#8B5CF6", "#14B8A6"];
 
   return (
     <PageShell>
@@ -342,7 +344,7 @@ export default async function DashboardPage() {
               ))}
             </div>
             <GroupedBars
-              groups={projectList.slice(0, 3).map((p, i) => ({ label: p.name, values: MOCK.compare[Math.min(i, MOCK.compare.length - 1)] }))}
+              groups={chartProjects.map((p, i) => ({ label: p.name, values: MOCK.compare[i % MOCK.compare.length] }))}
               colors={["#16A34A", "#2563EB", "#F59E0B", "#EF4444"]}
             />
           </Panel>
@@ -370,7 +372,7 @@ export default async function DashboardPage() {
           {/* MOCK：项目级进度历史未落库,趋势为示例;项目名取真实项目 */}
           <AreaTrend
             labels={MOCK.progressTrend.labels}
-            series={trendNames.map((n, i) => ({ name: n, values: MOCK.progressTrend.series[Math.min(i, 2)], color: trendColors[i] }))}
+            series={chartProjects.map((p, i) => ({ name: p.name, values: MOCK.progressTrend.series[i % MOCK.progressTrend.series.length], color: trendColors[i % trendColors.length] }))}
             height={140}
           />
         </Panel>

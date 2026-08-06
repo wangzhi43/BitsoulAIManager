@@ -47,6 +47,7 @@ export function SettingsUI({
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [np, setNp] = useState({ name: "", kind: "ANTHROPIC_SDK", baseUrl: "", apiKey: "", models: "" });
+  const [newProject, setNewProject] = useState({ name: "", repoUrl: "" });
   const [testResult, setTestResult] = useState<Record<string, string>>({});
 
   async function json(path: string, method: string, body?: unknown) {
@@ -137,6 +138,38 @@ export function SettingsUI({
             </li>
           ))}
         </ul>
+
+        {/* 新增项目：填名称与仓库地址即可纳入管理 */}
+        <form
+          className="mt-3 grid gap-2 border-t border-slate-100 pt-3 sm:grid-cols-[1fr_2fr_auto]"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const ok = await json("/api/admin/projects", "POST", {
+              name: newProject.name.trim(),
+              repoUrl: newProject.repoUrl.trim(),
+            });
+            if (ok) {
+              setNewProject({ name: "", repoUrl: "" });
+              router.refresh();
+            }
+          }}
+        >
+          <input
+            className={input}
+            placeholder="项目名称"
+            value={newProject.name}
+            onChange={(e) => setNewProject({ ...newProject, name: e.target.value })}
+          />
+          <input
+            className={input}
+            placeholder="GitHub 仓库地址（https:// 或 git@，需在机器人 PAT 中授权）"
+            value={newProject.repoUrl}
+            onChange={(e) => setNewProject({ ...newProject, repoUrl: e.target.value })}
+          />
+          <button type="submit" disabled={busy || !newProject.name.trim() || !newProject.repoUrl.trim()} className={btnCls("primary", "md")}>
+            新增项目
+          </button>
+        </form>
       </Panel>
 
       {/* LLM 供应商 */}
