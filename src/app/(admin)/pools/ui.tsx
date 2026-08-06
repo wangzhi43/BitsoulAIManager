@@ -762,13 +762,10 @@ export function Board({ cards: realCards }: { cards: BoardCard[] }) {
             仅看我负责
           </label>
           <button onClick={notReady} className={btnCls("secondary", "sm")}>
-            ▦ 保存视图
+            ☰ 视图设置
           </button>
           <button onClick={notReady} className={btnCls("primary", "sm")}>
             ✦ AI 重排
-          </button>
-          <button onClick={notReady} className={btnCls("secondary", "sm")}>
-            🔒 锁定优先级
           </button>
           <button onClick={() => router.refresh()} className={btnCls("ghost", "sm")} title="刷新">
             ↻
@@ -792,12 +789,12 @@ export function Board({ cards: realCards }: { cards: BoardCard[] }) {
         </div>
       </Panel>
 
-      {/* 看板主体 */}
-      <div className="flex gap-3 overflow-x-auto pb-2">
+      {/* 看板主体：五列均分满宽(参考图比例),窄屏下限最小列宽横向滚动 */}
+      <div className="grid grid-cols-[repeat(5,minmax(250px,1fr))] gap-3 overflow-x-auto pb-2">
         {COLUMNS.map((col) => {
           const list = filtered.filter((c) => col.statuses.includes(c.status));
           return (
-            <div key={col.key} className="flex w-[270px] shrink-0 flex-col rounded-xl bg-slate-100/70 p-2">
+            <div key={col.key} className="flex min-w-0 flex-col self-start rounded-xl bg-slate-100/70 p-2">
               <div className="mb-2 flex items-center gap-2 px-1 pt-1">
                 <span className={`h-3.5 w-1 rounded-full ${col.bar}`} />
                 <span className="text-[13px] font-semibold text-slate-800">{col.label}</span>

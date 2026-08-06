@@ -196,6 +196,62 @@ export function VBars({
   );
 }
 
+/** 分组柱状图（多项目多指标对比），0-100 刻度 */
+export function GroupedBars({
+  groups,
+  colors,
+  height = 150,
+  max = 100,
+}: {
+  groups: { label: string; values: number[] }[];
+  colors: string[];
+  height?: number;
+  max?: number;
+}) {
+  const w = 400;
+  const axisW = 24;
+  const chartH = height - 18;
+  const groupW = (w - axisW) / Math.max(groups.length, 1);
+  const barW = 9;
+  const barGap = 4;
+  return (
+    <svg viewBox={`0 0 ${w} ${height}`} className="w-full" role="img">
+      {[0, 0.25, 0.5, 0.75, 1].map((g) => (
+        <g key={g}>
+          <line x1={axisW} x2={w} y1={chartH * (1 - g)} y2={chartH * (1 - g)} stroke="currentColor" strokeOpacity="0.07" strokeWidth="1" />
+          <text x={axisW - 4} y={chartH * (1 - g) + 3} textAnchor="end" className="fill-current opacity-40" style={{ fontSize: 8 }}>
+            {Math.round(max * g)}
+          </text>
+        </g>
+      ))}
+      {groups.map((grp, gi) => {
+        const clusterW = grp.values.length * barW + (grp.values.length - 1) * barGap;
+        const x0 = axisW + gi * groupW + (groupW - clusterW) / 2;
+        return (
+          <g key={grp.label}>
+            {grp.values.map((v, i) => {
+              const h = Math.max((Math.min(v, max) / max) * (chartH - 6), 2);
+              const x = x0 + i * (barW + barGap);
+              const y = chartH - h;
+              return (
+                <path
+                  key={i}
+                  d={`M${x},${chartH} L${x},${y + 3} Q${x},${y} ${x + 3},${y} L${x + barW - 3},${y} Q${x + barW},${y} ${x + barW},${y + 3} L${x + barW},${chartH} Z`}
+                  fill={colors[i % colors.length]}
+                  opacity={0.9}
+                />
+              );
+            })}
+            <text x={axisW + gi * groupW + groupW / 2} y={height - 4} textAnchor="middle" className="fill-current opacity-50" style={{ fontSize: 8.5 }}>
+              {grp.label.length > 16 ? grp.label.slice(0, 15) + "…" : grp.label}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 /** 横向排行条（Agent 完成数等），带数值 */
 export function HBarList({ data, color = CHART_COLORS[0] }: { data: { label: string; value: number; hint?: string }[]; color?: string }) {
   const max = Math.max(...data.map((d) => d.value), 1);

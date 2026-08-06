@@ -1,17 +1,15 @@
 # TODO.md
 
 ## 当前任务
-搭建本地开发环境(管理员已批准方案一):OrbStack + 本地 postgres/redis 容器 + .env + npm run dev,实现改代码秒级预览;搭好后用 Playwright 登录截图逐页目检新 UI。
+按 0806 新参考图迭代了总览页与执行中心(改动在本地工作区,未提交未部署),等管理员本地看效果确认后再推线上。
 
 ## 步骤
-- [x] 确认本机无容器运行时/postgres/redis,管理员选定 OrbStack
-- [ ] brew install orbstack(进行中,后台下载)
-- [x] 创建本地 .env(随机密钥,DATABASE_URL/REDIS_URL 指向 127.0.0.1,已确认 gitignore)
-- [ ] docker compose up -d postgres redis
-- [ ] prisma migrate deploy + seed(本地管理员账号)
-- [ ] npm run dev(3100 端口)
-- [ ] Playwright 登录截图:dashboard/inbox/confirm/requirements 详情/branches/pools,对照 5 张参考图目检
-- [ ] 告知管理员本地预览用法
+- [x] 0806 新参考图迭代:dashboard 重排(待处理事项卡+快捷操作宫格、健康卡趋势线+四指标、项目关键指标对比 GroupedBars、项目进度趋势、AI 每日进度趋势、资源使用、项目类型分布、日报摘要);pools 工具栏改「视图设置」;新增 charts.tsx GroupedBars;本地截图目检通过
+- [ ] 管理员本地验收后:commit + push + 云助手部署
+- [x] 本地开发环境(方案一,管理员批准):OrbStack 安装、本地 .env(随机密钥,gitignore)、compose 起 postgres/redis(docker-compose.override.yml 本地暴露 5432/6379,已 gitignore)、migrate + seed(admin/admin123)、npm run dev(localhost:3100)
+- [x] Playwright 截图目检:真实空库模式 + 展示模式全页截图,dashboard/inbox/详情/branches/pools 均与参考图逐区块一致
+- [x] 目检发现并修复:branches 空库只剩空态、pools 空库看板无卡片 → 增加 MOCK 空库回退(58a5973),写操作在 mock 数据上降级提示
+- [x] 二次部署上线并健康检查通过(2026-08-05)
 
 ## 已完成
 - [x] 2026-08-05 UI 全站重构上线 https://pm.bitsouls.cn(commit c9e1153):严格按 docs/ui_design/ 5 张参考图逐区块复现,缺数据用集中 MOCK 常量填充;深色侧边栏+浅色主题;typecheck/build 通过;云助手部署(GitHub 拉取首次失败重试成功),健康检查通过;已通知管理员验收
