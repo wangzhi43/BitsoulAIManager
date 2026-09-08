@@ -248,7 +248,22 @@ model Attachment { ... }       // 文件统一存本地卷 /data/uploads，记 h
 
 ### 4.4 SSE
 
-`GET /api/events?scope=global|project:<id>`——推送需求状态变更、任务认领/提交、合并结果、Bot 心跳异常。前端看板与列表页订阅。
+`GET /api/events`（2026-09 已实现）：服务端每 4 秒检测 ReqEvent / AuditLog / DevTask / TestTask / Requirement / 待聚合消息的变更指纹，有变化即推送 `event: change`；前端 `AutoRefresh` 收到后 `router.refresh()`，断线回退 60 秒轮询。不做业务级 pub/sub，避免在每个写入路径埋点。
+
+### 4.5 2026-09 新增 Admin API（docs/UI_REDESIGN.md §2.1）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/api/admin/requirements/:id/split` | 拆分为多单（PRD #14） |
+| POST | `/api/admin/requirements/:id/retry-merge` / `exclude` / `cherry-pick` | 冲突重试、从 daily 剔除（revert）、单需求进 main（PRD #26） |
+| POST | `/api/admin/pools/rank` | 手动触发项管重排 |
+| POST | `/api/admin/tasks/:id/release` | 管理员强制释放认领 |
+| GET/POST | `/api/admin/branches`、POST `/api/admin/branches/:id/refresh` | 手动建 daily、刷新 diff 摘要（写 `DailyBranch.reviewSummary`，形状见 `src/lib/branch-summary.ts`） |
+| POST | `/api/admin/branches/:id/merge?force=1` | 合并门槛：无冲突 + 已合入需求都有 PASS 报告；force 跳过报告检查并审计 |
+| GET/POST | `/api/admin/reports`、`/api/admin/reports/generate` | 日报列表 / 立即生成 |
+| GET/PUT | `/api/admin/system-config`、POST `.../web-form-token` | 运行参数 / cron / 单价表 / Web 表单令牌（`src/lib/runtime-config.ts` 读取，60 秒缓存） |
+| GET/POST | `/api/public/submit` + 页面 `/submit?token=` | Web 表单入口（PRD #10） |
+| GET | `/api/events` | SSE |
 
 ---
 
@@ -330,6 +345,8 @@ Prompt 模板存 `src/lib/llm/prompts/`（版本入库便于回溯），遵循�
 ---
 
 ## 8. 定时任务清单（BullMQ repeatable）
+
+> 2026-09 更新：前四项的时间可在「设置 → 系统参数」覆盖（SystemConfig `cronDailyBranch` / `cronRankPools` / `cronDailyReport` / `cronUsageRollup`），worker 每 5 分钟 `reload-cron` 重载；新增 `fetch-repos`（每 5 分钟增量 fetch 活跃仓库）与 `bot-heartbeat-check`（每 5 分钟，超阈值写 `wechatBotAlert` 供工作台标红）。认领超时扫描改读运行参数并回写需求状态。
 
 | 时间 | 任务 |
 |---|---|

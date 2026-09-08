@@ -13,6 +13,8 @@
     "lint": "next lint",
     "worker": "tsx scripts/worker.ts",
     "seed": "tsx scripts/seed.ts",
+    "seed:dev": "tsx scripts/seed-dev.ts",
+    "smoke": "tsx scripts/smoke.ts",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:generate": "prisma generate"

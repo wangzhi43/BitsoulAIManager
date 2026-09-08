@@ -1,15 +1,26 @@
 import { randomUUID } from "crypto";
 import { prisma } from "../db";
 import { logger } from "../logger";
-import { config } from "../config";
 import { getQueues } from "../queue";
+import { getRuntimeNumber, getRuntimeString } from "../runtime-config";
+import { openClarificationRequirements } from "./clarify";
 
 // 消息聚合（PRD §3.2）：同一会话静默超过聚合窗口后，把未归档消息合并为一个需求线索。
 // 每分钟由 cron 调用。MENTION/HASHTAG 模式下，窗口内无触发词则整批丢弃（仅归档不建线索）。
+// 线索建好后：若该会话有待答澄清问题且 48h 内发过澄清文案，先走 apply-clarification（PRD #17），否则 parse-thread。
+
+const CLARIFY_WINDOW_MS = 48 * 3600_000;
+
+/** MENTION 模式触发词：@机器人昵称（系统参数 wechatBotName）或 @所有人；昵称未配置时退化为任意 @ */
+function mentionTriggered(text: string, botName: string): boolean {
+  if (text.includes("@所有人")) return true;
+  return botName ? text.includes(`@${botName}`) : text.includes("@");
+}
 
 export async function aggregateThreads(): Promise<void> {
-  const windowMs = config.aggregationWindowMinutes * 60_000;
+  const windowMs = (await getRuntimeNumber("aggWindowMinutes")) * 60_000;
   const cutoff = new Date(Date.now() - windowMs);
+  const botName = (await getRuntimeString("wechatBotName")).trim();
 
   const groups = await prisma.inboxMessage.groupBy({
     by: ["convId"],
@@ -31,7 +42,7 @@ export async function aggregateThreads(): Promise<void> {
     const triggered =
       mode === "ALL" ||
       messages.some((m) =>
-        mode === "HASHTAG" ? (m.text ?? "").includes("#需求") : (m.text ?? "").includes("@"),
+        mode === "HASHTAG" ? (m.text ?? "").includes("#需求") : mentionTriggered(m.text ?? "", botName),
       );
 
     const now = new Date();
@@ -81,11 +92,23 @@ export async function aggregateThreads(): Promise<void> {
       });
     });
 
+    const kind = (await shouldApplyClarification(g.convId)) ? "apply-clarification" : "parse-thread";
     await getQueues().llm.add(
-      "parse-thread",
-      { kind: "parse-thread", threadId },
+      kind,
+      { kind, threadId },
       { attempts: 3, backoff: { type: "exponential", delay: 10_000 } },
     );
-    logger.info({ convId: g.convId, threadId, count: messages.length }, "thread created and queued");
+    logger.info({ convId: g.convId, threadId, count: messages.length, kind }, "thread created and queued");
   }
+}
+
+/** 会话内有未答澄清问题，且 48h 内向该会话发过澄清文案 → 新消息优先按答复处理 */
+async function shouldApplyClarification(convId: string): Promise<boolean> {
+  const open = await openClarificationRequirements(convId, 1);
+  if (open.length === 0) return false;
+  const recentOutbox = await prisma.wechatOutbox.findFirst({
+    where: { convId, createdAt: { gte: new Date(Date.now() - CLARIFY_WINDOW_MS) } },
+    select: { id: true },
+  });
+  return !!recentOutbox;
 }

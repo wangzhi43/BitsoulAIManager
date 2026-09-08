@@ -1,130 +1,114 @@
 import { prisma } from "@/lib/db";
 import { isDemoMode, DEMO } from "@/lib/demo";
-import { currentAdmin } from "@/lib/auth";
-import { ReviewCenter, type BranchItem } from "./ui";
-import { PageShell, PageHeader } from "@/components/ui";
+import { dailyBranchName } from "@/lib/git";
+import { parseBranchSummary, type BranchSummary } from "@/lib/branch-summary";
+import { PageShell, PageHeader, DemoNote } from "@/components/ui";
+import { ReviewCenter, RefreshDiffButton, type BranchOption, type BranchDetail, type ReqRow } from "./ui";
 
 export const dynamic = "force-dynamic";
 
-// 晚间审查与验收中心（docs/ui_design/XA9hhmonfsFrGAye.png）
-// 服务端负责取数（DailyBranch + Requirement + DevTask + TestReport），表现层在 ./ui.tsx
+// 分支审查（设计画布「分支审查」画板）：真实 diff（DailyBranch.reviewSummary）+ 合并条件清单 + 待验收 + 冲突处理
 
-// MOCK 数据：真实链路未接入时的界面填充，后续替换（通知计数未接入消息中心）
-const MOCK_NOTIFY_COUNT = 3;
-
-export default async function BranchesPage() {
+export default async function BranchesPage({ searchParams }: { searchParams: Promise<{ branch?: string }> }) {
+  const { branch: branchParam } = await searchParams;
   const demo = await isDemoMode();
-  const admin = await currentAdmin();
 
-  let rows: BranchItem[];
+  let options: BranchOption[];
+  let detail: BranchDetail | null = null;
+  let missingToday: { id: string; name: string }[] = [];
+
   if (demo) {
-    rows = DEMO.branches.map((b) => ({
-      id: b.id,
-      project: b.project,
-      name: b.name,
-      date: null,
-      createdAt: null,
-      mergedToMain: b.mergedToMain,
-      mergedAt: b.mergedAt ? b.mergedAt.toISOString() : null,
-      requirements: b.requirements.map((r) => ({
-        id: r.id,
-        seq: r.seq,
-        title: r.title,
-        status: r.status,
-        conflict: r.conflict,
-        submitNote: r.submitNote,
-        agent: r.agent,
-        featureBranch: `feature/REQ-${r.seq}`,
-        commits: [],
-        submittedAt: null,
-        reports: r.reports,
-      })),
-    }));
+    const today = `daily/${new Date().toISOString().slice(0, 10).replace(/-/g, "")}`;
+    options = DEMO.branches.map((b) => ({ id: b.id, project: b.project, name: b.name, mergedToMain: b.mergedToMain, date: new Date().toISOString() }));
+    const sel = DEMO.branches.find((b) => b.id === branchParam) ?? DEMO.branches[0];
+    const summary: BranchSummary = {
+      refreshedAt: new Date(Date.now() - 600_000).toISOString(),
+      baseCommit: "a1b2c3d",
+      headCommit: "e7f3a9b",
+      totals: { commits: 7, files: 7, insertions: 235, deletions: 36 },
+      commits: [
+        { sha: "e7f3a9b", message: "feat(list): paginate customers by 20 with infinite scroll", author: "dev-agent-1", date: new Date(Date.now() - 2 * 3600_000).toISOString(), reqSeq: 95 },
+        { sha: "9c1d4ef", message: "fix(upload): normalize EXIF orientation before preview", author: "dev-agent-1", date: new Date(Date.now() - 3 * 3600_000).toISOString(), reqSeq: 96 },
+        { sha: "3b2a7c1", message: "docs: update dev-log.md", author: "bitsoul-pm-bot", date: new Date(Date.now() - 3.5 * 3600_000).toISOString(), reqSeq: null },
+      ],
+      perRequirement: sel.requirements.map((r, i) => ({ seq: r.seq, featureBranch: `feature/REQ-${r.seq}`, mergeSha: r.conflict ? null : `m${r.seq}f${i}`, files: r.conflict ? 0 : 4 - i, insertions: r.conflict ? 0 : 182 - i * 70, deletions: r.conflict ? 0 : 23 - i * 7, changedFiles: r.conflict ? [] : ["src/app/customers/page.tsx", "src/lib/api.ts"] })),
+    };
+    detail = {
+      id: sel.id,
+      project: sel.project,
+      name: sel.name === today ? today : sel.name,
+      mergedToMain: sel.mergedToMain,
+      mergedAt: sel.mergedAt ? sel.mergedAt.toISOString() : null,
+      createdAt: new Date(Date.now() - 10 * 3600_000).toISOString(),
+      summary,
+      requirements: sel.requirements.map(
+        (r): ReqRow => ({
+          id: r.id,
+          seq: r.seq,
+          title: r.title,
+          status: r.status,
+          agent: r.agent,
+          featureBranch: `feature/REQ-${r.seq}`,
+          devStatus: r.conflict ? "CONFLICT" : "MERGED",
+          submitNote: r.submitNote,
+          report: r.reports[0] ? { conclusion: r.reports[0].conclusion, passRate: r.reports[0].passRate } : null,
+          conflictFiles: r.conflict ? ["audio/recorder.ts"] : [],
+        }),
+      ),
+    };
   } else {
-    const branches = await prisma.dailyBranch.findMany({
-      include: {
-        project: { select: { name: true } },
-        requirements: {
-          include: {
-            devTask: {
-              select: {
-                status: true,
-                submitNote: true,
-                commits: true,
-                submittedAt: true,
-                claimedBy: { select: { username: true } },
-              },
-            },
-            testTasks: { include: { report: { select: { conclusion: true, passRate: true } } } },
-          },
-          orderBy: { seq: "asc" },
+    const [branches, projects] = await Promise.all([
+      prisma.dailyBranch.findMany({ include: { project: { select: { id: true, name: true, active: true } } }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 14 }),
+      prisma.project.findMany({ where: { active: true }, select: { id: true, name: true } }),
+    ]);
+    options = branches.map((b) => ({ id: b.id, project: b.project.name, name: b.name, mergedToMain: b.mergedToMain, date: b.date.toISOString() }));
+    const todayName = dailyBranchName(new Date());
+    missingToday = projects.filter((p) => !branches.some((b) => b.projectId === p.id && b.name === todayName));
+
+    const sel = branches.find((b) => b.id === branchParam) ?? branches.find((b) => !b.mergedToMain) ?? branches[0] ?? null;
+    if (sel) {
+      const reqs = await prisma.requirement.findMany({
+        where: { dailyBranchId: sel.id },
+        include: {
+          devTask: { select: { status: true, submitNote: true, claimedBy: { select: { username: true } } } },
+          testTasks: { include: { report: { select: { conclusion: true, passRate: true, createdAt: true } } }, orderBy: { createdAt: "asc" } },
+          events: { where: { note: { contains: "合并冲突" } }, orderBy: { createdAt: "desc" }, take: 1, select: { note: true } },
         },
-      },
-      orderBy: { date: "desc" },
-      take: 14,
-    });
-    rows = branches.map((b) => ({
-      id: b.id,
-      project: b.project.name,
-      name: b.name,
-      date: b.date.toISOString(),
-      createdAt: b.createdAt.toISOString(),
-      mergedToMain: b.mergedToMain,
-      mergedAt: b.mergedAt?.toISOString() ?? null,
-      requirements: b.requirements.map((r) => ({
-        id: r.id,
-        seq: r.seq,
-        title: r.title,
-        status: r.status,
-        conflict: r.devTask?.status === "CONFLICT",
-        submitNote: r.devTask?.submitNote ?? null,
-        agent: r.devTask?.claimedBy?.username ?? null,
-        featureBranch: r.featureBranch,
-        commits: Array.isArray(r.devTask?.commits) ? (r.devTask!.commits as string[]) : [],
-        submittedAt: r.devTask?.submittedAt?.toISOString() ?? null,
-        reports: r.testTasks
-          .map((t) => t.report)
-          .filter((x) => !!x)
-          .map((x) => ({ conclusion: x!.conclusion as string, passRate: x!.passRate })),
-      })),
-    }));
+        orderBy: { seq: "asc" },
+      });
+      detail = {
+        id: sel.id,
+        project: sel.project.name,
+        name: sel.name,
+        mergedToMain: sel.mergedToMain,
+        mergedAt: sel.mergedAt?.toISOString() ?? null,
+        createdAt: sel.createdAt.toISOString(),
+        summary: parseBranchSummary(sel.reviewSummary),
+        requirements: reqs.map((r): ReqRow => {
+          const rep = [...r.testTasks].reverse().map((t) => t.report).find(Boolean) ?? null;
+          const conflictNote = r.devTask?.status === "CONFLICT" ? r.events[0]?.note ?? "" : "";
+          return {
+            id: r.id,
+            seq: r.seq,
+            title: r.title,
+            status: r.status,
+            agent: r.devTask?.claimedBy?.username ?? null,
+            featureBranch: r.featureBranch,
+            devStatus: r.devTask?.status ?? null,
+            submitNote: r.devTask?.submitNote ?? null,
+            report: rep ? { conclusion: rep.conclusion, passRate: rep.passRate } : null,
+            conflictFiles: conflictNote.replace(/^.*?：/, "").split(/,\s*/).filter(Boolean),
+          };
+        }),
+      };
+    }
   }
 
   return (
     <PageShell>
-      <PageHeader
-        title={
-          <span className="inline-flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-[14px]">🌙</span>
-            晚间审查与验收中心
-          </span>
-        }
-        subtitle="每日闭环：审查分支 → 验收需求 → 安全合并"
-        actions={
-          <>
-            {/* MOCK：通知计数未接入消息中心 */}
-            <span className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg text-[16px] text-slate-500 hover:bg-slate-100" title="通知（接入中）">
-              🔔
-              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
-                {MOCK_NOTIFY_COUNT}
-              </span>
-            </span>
-            <span className="inline-flex items-center gap-2 rounded-lg px-2 py-1">
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-100 text-[12px] font-semibold text-blue-600">
-                {(admin?.displayName ?? "Admin").slice(0, 1)}
-              </span>
-              <span className="text-left leading-tight">
-                <span className="block text-[12px] font-medium text-slate-700">{admin?.displayName ?? "Admin"}</span>
-                <span className="block text-[10px] text-slate-400">管理员</span>
-              </span>
-            </span>
-            <span className="text-[12px] text-blue-600" title="使用指南编写中">
-              ◎ 使用指南
-            </span>
-          </>
-        }
-      />
-      <ReviewCenter branches={rows} demo={demo} />
+      <PageHeader title="分支审查" subtitle="每晚：核对变更 → 验收 → 合并 main" actions={detail && <RefreshDiffButton branchId={detail.id} demo={demo} />} />
+      {demo && <DemoNote />}
+      <ReviewCenter options={options} detail={detail} missingToday={missingToday} demo={demo} />
     </PageShell>
   );
 }

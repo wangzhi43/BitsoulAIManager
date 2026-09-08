@@ -1,497 +1,302 @@
 import Link from "next/link";
 import { isDemoMode, DEMO_STATS } from "@/lib/demo";
 import { getDashboardStats, type DashboardStats } from "@/lib/stats";
-import { PageShell, PageHeader, Panel } from "@/components/ui";
-import { Sparkline, AreaTrend, GroupedBars, CHART_COLORS } from "@/components/charts";
+import { PageShell, PageHeader, Panel, KpiTile, KpiRow, Table, EmptyRow, Chip, EmptyState, LinkButton, ago, fmtTokens, fmtDateTime, DemoNote, Notice } from "@/components/ui";
+import { LineChart, Legend, BarChart, CHART_COLORS } from "@/components/charts";
+import { Icon } from "@/components/icons";
+import { actorLabel } from "@/components/status";
 
 export const dynamic = "force-dynamic";
 
-// 全局运营总览：严格按 docs/ui_design 0806 新版参考图复现
-// 布局：待处理事项 + 快捷操作 / 项目健康度(3 卡 + 指标对比) /
-//       全局关键指标 + 项目进度趋势 + AI 每日进度趋势 /
-//       Agent 实时动态 + 资源使用情况 + 项目类型分布 + AI 每日报告摘要
-// 数据规则：优先真实数据；真实链路未接入/为空时回退 MOCK 填充
+// 工作台（设计画布「工作台」画板）：
+// 第一行 = 需要人处理的四个数字；项目状态表；近 14 天吞吐；最近动态；智能体在线；LLM 用量；系统状态。
+// 真实模式只用 getDashboardStats()，无数据即空态，不再用 MOCK 填充。
 
-// MOCK 数据：真实链路未接入时的界面填充,后续替换
-const MOCK = {
-  pendingConfirm: 12,
-  pendingConfirmProjects: 3,
-  blocked: 5,
-  pendingApprove: 8,
-  poolDepth: 23,
-  delta: { confirm: "+3", blocked: "+1", approve: "+2", pool: "较昨日 +2", confirmD: "较昨日 +3", blockedD: "较昨日 +1", done: "较昨日 +6", agent: "较昨日 +2", llm: "较昨日 +8.3%" },
-  doneToday: 34,
-  agentOnline: 18,
-  llmCost: "$128.6",
-  llmTokens: "2.4M",
-  agentFeed: [
-    { name: "代码助手-01", action: "正在处理 用户权限管理模块", time: "2 分钟前" },
-    { name: "测试助手-02", action: "执行单元测试 32/45", time: "5 分钟前" },
-    { name: "文档助手-01", action: "生成接口文档中…", time: "7 分钟前" },
-    { name: "数据分析师-01", action: "分析用户行为数据", time: "12 分钟前" },
-  ],
-  health: [
-    { score: 92, doneToday: 23, blocked: 0, progress: 78, quality: "良好", resource: "充足", risk: "低", spark: [55, 62, 58, 70, 66, 78, 74, 85, 80, 92] },
-    { score: 62, doneToday: 8, blocked: 3, progress: 45, quality: "需关注", resource: "紧张", risk: "较高", spark: [70, 64, 68, 58, 62, 52, 58, 50, 56, 62] },
-    { score: 28, doneToday: 3, blocked: 2, progress: 20, quality: "不佳", resource: "严重不足", risk: "严重", spark: [52, 45, 48, 40, 42, 35, 38, 30, 34, 28] },
-  ],
-  healthNames: ["BitSoulClaw", "bitsoulofficial", "minsheng-worklog-mp"],
-  // 指标对比：进度/质量/资源 分数化;风险越低越好
-  compare: [
-    [78, 66, 52, 25],
-    [45, 60, 40, 15],
-    [68, 45, 30, 62],
-  ],
-  progressTrend: {
-    labels: ["07/31", "08/01", "08/02", "08/03", "08/04", "08/05", "08/06"],
-    series: [
-      [15, 30, 38, 52, 60, 68, 78],
-      [8, 16, 24, 30, 36, 41, 45],
-      [4, 7, 10, 13, 16, 18, 20],
-    ],
-  },
-  dailyDone: [42, 75, 58, 85, 62, 88, 60],
-  resources: [
-    { icon: "🖥", tone: "bg-blue-50 text-blue-600", name: "计算资源", pct: 68, detail: "6.8 / 10 核", bar: "#2563EB" },
-    { icon: "💾", tone: "bg-green-50 text-green-600", name: "存储资源", pct: 45, detail: "225 / 500 GB", bar: "#16A34A" },
-    { icon: "🧠", tone: "bg-violet-50 text-violet-600", name: "内存资源", pct: 72, detail: "14.4 / 20 GB", bar: "#8B5CF6" },
-    { icon: "🌐", tone: "bg-amber-50 text-amber-600", name: "网络资源", pct: 45, detail: "320 / 1000 Mbps", bar: "#F59E0B" },
-  ],
-  projectTypes: [
-    { name: "AI 应用开发", count: 8, pct: 44, color: "#2563EB" },
-    { name: "数据分析", count: 5, pct: 28, color: "#16A34A" },
-    { name: "平台开发", count: 3, pct: 17, color: "#F59E0B" },
-    { name: "其他", count: 2, pct: 11, color: "#8B5CF6" },
-  ],
-  reportTime: "01:33",
-};
-
-function fmtTokens(v: number) {
-  return v >= 10000 ? `${(v / 10000).toFixed(1)} 万` : String(v);
-}
-
-/** 待处理事项卡：淡色渐变底 + 大数字 + 增量 + 3D 图标位 + 底部链接 */
-function TodoCard({
-  title,
-  value,
-  unit,
-  delta,
-  note,
-  cta,
-  href,
-  tone,
-  icon,
-}: {
-  title: string;
-  value: number | string;
-  unit?: string;
-  delta?: string;
-  note: string;
-  cta: string;
-  href: string;
-  tone: "red" | "rose" | "amber" | "blue";
-  icon: string;
-}) {
-  const tones = {
-    red: { card: "from-red-50/90", num: "text-red-600", icon: "bg-red-100/80" },
-    rose: { card: "from-rose-50/90", num: "text-rose-600", icon: "bg-rose-100/80" },
-    amber: { card: "from-amber-50/90", num: "text-amber-600", icon: "bg-amber-100/80" },
-    blue: { card: "from-blue-50/90", num: "text-blue-600", icon: "bg-blue-100/80" },
-  }[tone];
-  return (
-    <div className={`flex flex-col rounded-xl border border-slate-200 bg-gradient-to-br to-white p-4 ${tones.card}`}>
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="text-[13px] font-medium text-slate-700">{title}</p>
-          <p className={`mt-1.5 text-[32px] font-bold leading-none tabular-nums ${tones.num}`}>
-            {value}
-            {unit && <span className="ml-1 text-[14px] font-medium">{unit}</span>}
-          </p>
-        </div>
-        <span className={`flex h-11 w-11 items-center justify-center rounded-2xl text-[20px] shadow-sm ${tones.icon}`}>{icon}</span>
-      </div>
-      <p className="mt-1.5 flex-1 text-[12px] text-slate-500">
-        {note}
-        {delta && <span className="ml-1.5 font-semibold text-red-500">{delta}</span>}
-      </p>
-      <Link href={href} className="mt-3 flex items-center gap-1 border-t border-slate-200/70 pt-2.5 text-[13px] font-medium text-blue-600 hover:underline">
-        {cta} <span>→</span>
-      </Link>
-    </div>
-  );
-}
-
-/** 项目健康度卡：分数 + 趋势线 + 进度/质量/资源/风险四列 + 底部完成/阻塞 */
-function HealthCard({
-  name,
-  score,
-  spark,
-  metrics,
-  doneToday,
-  blocked,
-}: {
-  name: string;
-  score: number;
-  spark: number[];
-  metrics: { label: string; value: string; dot: string }[];
-  doneToday: number;
-  blocked: number;
-}) {
-  const level = score >= 75 ? "ok" : score >= 40 ? "risk" : "danger";
-  const cfg = {
-    ok: { label: "健康", text: "text-green-600", line: "#16A34A" },
-    risk: { label: "风险", text: "text-amber-600", line: "#F59E0B" },
-    danger: { label: "严重风险", text: "text-red-600", line: "#EF4444" },
-  }[level];
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-      <div className="flex items-center justify-between gap-2">
-        <p className="truncate text-[14px] font-semibold text-slate-800">{name}</p>
-        <span className={`shrink-0 text-[12px] font-semibold ${cfg.text}`}>{cfg.label}</span>
-      </div>
-      <div className="mt-2.5 flex items-center justify-between gap-3">
-        <div className="shrink-0">
-          <p className="text-[30px] font-bold leading-none tabular-nums text-slate-900">
-            {score}
-            <span className="ml-0.5 text-[13px] font-normal text-slate-400">/100</span>
-          </p>
-          <p className="mt-1 text-[11px] text-slate-400">整体健康度</p>
-        </div>
-        <Sparkline values={spark} color={cfg.line} width={150} height={44} />
-      </div>
-      <div className="mt-3 grid grid-cols-4 gap-1">
-        {metrics.map((m) => (
-          <div key={m.label}>
-            <p className="flex items-center gap-1 text-[11px] text-slate-400">
-              <span className={`h-1.5 w-1.5 rounded-full ${m.dot}`} />
-              {m.label}
-            </p>
-            <p className="mt-0.5 whitespace-nowrap text-[12px] font-semibold tabular-nums text-slate-800">{m.value}</p>
-          </div>
-        ))}
-      </div>
-      <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2.5 text-[12px]">
-        <span className="text-slate-500">
-          今日完成 <b className="tabular-nums text-slate-800">{doneToday}</b> 项
-        </span>
-        <span className={blocked > 0 ? "font-medium text-red-500" : "text-slate-400"}>
-          阻塞项 <b className="tabular-nums">{blocked}</b>
-        </span>
-      </div>
-    </div>
-  );
+function delta(n: number | null | undefined): React.ReactNode {
+  if (n == null) return null;
+  if (n === 0) return <span className="text-ink-3">较昨日持平</span>;
+  return <span className={n > 0 ? "text-ink-2" : "text-ink-3"}>较昨日 {n > 0 ? `+${n}` : n}</span>;
 }
 
 export default async function DashboardPage() {
   const demo = await isDemoMode();
   const s: DashboardStats = demo ? (DEMO_STATS as unknown as DashboardStats) : await getDashboardStats();
-
   const now = new Date();
-  const dateStr = now.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" });
+  const dateStr = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}/${String(now.getDate()).padStart(2, "0")}`;
 
-  // 真实值优先,为空回退 MOCK
-  const conflictsReal = s.projects.reduce((acc, p) => acc + p.conflicts, 0);
-  const readyReal = s.statusDist.find((d) => d.name === "待开发")?.value ?? 0;
-  const llmTodayReal = s.llm7d.byDay.at(-1)?.value ?? 0;
-  const hasReal = s.kpis.pendingConfirm + s.kpis.inProgress + s.kpis.pendingAccept + readyReal > 0;
-
-  const v = {
-    pendingConfirm: hasReal ? s.kpis.pendingConfirm : MOCK.pendingConfirm,
-    confirmProjects: hasReal ? s.projects.filter((p) => p.pendingConfirm > 0).length : MOCK.pendingConfirmProjects,
-    blocked: hasReal ? conflictsReal : MOCK.blocked,
-    pendingApprove: hasReal ? s.kpis.pendingAccept : MOCK.pendingApprove,
-    poolDepth: hasReal ? readyReal : MOCK.poolDepth,
-    doneToday: hasReal ? s.kpis.acceptedToday : MOCK.doneToday,
-    agentOnline: s.agentActive > 0 ? s.agentActive : MOCK.agentOnline,
-    llm: llmTodayReal > 0 ? fmtTokens(llmTodayReal) : MOCK.llmCost,
-    llmWeek: (() => {
-      const t = s.llm7d.byDay.reduce((acc, d) => acc + d.value, 0);
-      return t > 0 ? fmtTokens(t) : MOCK.llmTokens;
-    })(),
-  };
-
-  const quickActions = [
-    { label: "进入待确认", href: "/confirm", icon: "❓", tone: "bg-red-50 text-red-500" },
-    { label: "处理阻塞项", href: "/branches", icon: "⚠️", tone: "bg-amber-50 text-amber-500" },
-    { label: "查看项目列表", href: "/pools", icon: "▤", tone: "bg-blue-50 text-blue-600" },
-    { label: "打开今日日报", href: "/reports", icon: "▣", tone: "bg-indigo-50 text-indigo-600" },
-    { label: "查看消耗分析", href: "/reports", icon: "$", tone: "bg-green-50 text-green-600" },
-    { label: "智能体管理", href: "/agents", icon: "⬡", tone: "bg-violet-50 text-violet-600" },
-    { label: "创建新项目", href: "/settings", icon: "＋", tone: "bg-sky-50 text-sky-600" },
-    { label: "更多功能", href: "/more", icon: "▦", tone: "bg-purple-50 text-purple-600" },
+  const rows = s.projectRows ?? [];
+  const noProjects = rows.length === 0;
+  const feed = s.recentEvents.slice(0, 8);
+  const llmTotal7d = s.llm7d.byDay.reduce((a, d) => a + d.value, 0);
+  const qualityItems = [
+    { label: "需求前置时间", value: s.quality.avgLeadHours != null ? `${s.quality.avgLeadHours} 小时` : "—" },
+    { label: "开发时长", value: s.quality.avgDevHours != null ? `${s.quality.avgDevHours} 小时` : "—" },
+    { label: "返工率", value: s.quality.reworkRate != null ? `${s.quality.reworkRate}%` : "—" },
   ];
-
-  // 项目健康度：真实项目按序,MOCK 指标兜底
-  const projectList = s.projects.length > 0 ? s.projects : MOCK.healthNames.map((n, i) => ({ id: String(i), name: n, active: true, pendingConfirm: 0, developing: 0, testing: 0, pendingAccept: 0, conflicts: MOCK.health[i].blocked }));
-  // 健康卡渲染全部项目(网格自动换行);mock 指标按索引循环兜底
-  const healthCards = projectList.map((p, i) => {
-    const m = MOCK.health[i % MOCK.health.length];
-    const load = p.pendingConfirm + p.developing + p.testing + p.pendingAccept;
-    const score = hasReal && load + p.conflicts > 0 ? Math.max(5, Math.min(100, 100 - p.conflicts * 25 - p.pendingConfirm * 4)) : m.score;
-    const progress = hasReal && load > 0 ? Math.round(((p.testing + p.pendingAccept) / Math.max(load, 1)) * 100) : m.progress;
-    const dotFor = (good: boolean, mid: boolean) => (good ? "bg-green-400" : mid ? "bg-amber-400" : "bg-red-400");
-    return {
-      name: p.name,
-      score,
-      spark: m.spark,
-      doneToday: hasReal ? s.kpis.acceptedToday : m.doneToday,
-      blocked: hasReal ? p.conflicts : m.blocked,
-      metrics: [
-        { label: "进度", value: `${progress}%`, dot: dotFor(progress >= 60, progress >= 35) },
-        { label: "质量", value: m.quality, dot: dotFor(m.quality === "良好", m.quality === "需关注") },
-        { label: "资源", value: m.resource, dot: dotFor(m.resource === "充足", m.resource === "紧张") },
-        { label: "风险", value: m.risk, dot: dotFor(m.risk === "低", m.risk === "较高") },
-      ],
-    };
-  });
-
-  const metricCells = [
-    { label: "待确认数", value: v.pendingConfirm, delta: MOCK.delta.confirmD, icon: "📋", cell: "border-blue-100 bg-blue-50/50" },
-    { label: "待开发资源", value: `${v.poolDepth} 项`, delta: MOCK.delta.pool, icon: "🗂", cell: "border-indigo-100 bg-indigo-50/50" },
-    { label: "阻塞项", value: v.blocked, delta: MOCK.delta.blockedD, icon: "⚠️", cell: "border-red-100 bg-red-50/50", alert: true },
-    { label: "今日完成", value: `${v.doneToday} 项`, delta: MOCK.delta.done, icon: "✅", cell: "border-slate-100 bg-slate-50/60" },
-    { label: "在线 Agent", value: `${v.agentOnline} 个`, delta: MOCK.delta.agent, icon: "🤖", cell: "border-slate-100 bg-slate-50/60" },
-    { label: "LLM 消耗", value: v.llm, delta: MOCK.delta.llm, icon: "💠", cell: "border-slate-100 bg-slate-50/60" },
-  ];
-
-  // Agent 实时动态：真实事件优先,否则 MOCK
-  const feed =
-    s.recentEvents.length > 0
-      ? s.recentEvents.slice(0, 4).map((e) => ({
-          name: e.actor,
-          action: `REQ-${e.seq} ${e.title}：${e.note}`,
-          time: new Date(e.at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }),
-        }))
-      : MOCK.agentFeed;
-
-  // 图表区最多取前 6 个项目保证可读性(健康卡不受限)
-  const chartProjects = projectList.slice(0, 6);
-  const trendColors = ["#16A34A", "#F59E0B", "#EF4444", "#2563EB", "#8B5CF6", "#14B8A6"];
 
   return (
     <PageShell>
       <PageHeader
-        title="全局运营总览"
-        subtitle="AI 驱动的项目健康度与关键指标总览"
+        title="工作台"
+        subtitle="今日待办 · 项目状态 · 系统健康"
         actions={
           <>
-            <span className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] text-slate-600">{dateStr}（今天） 📅</span>
-            <span className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] text-slate-600">
-              ⟳ 自动刷新：30秒 <span className="text-slate-300">∨</span>
+            <span className="num flex h-8 items-center gap-1.5 rounded-md border border-line-strong bg-surface px-3 text-[12px] text-ink-2">
+              <Icon name="calendar" size={13} />
+              {dateStr}
             </span>
+            <LinkButton href="/dashboard" icon="refresh">
+              刷新
+            </LinkButton>
           </>
         }
       />
+      {demo && <DemoNote />}
 
-      {s.usageAlert && (
-        <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-[13px] text-red-700">
-          ⚠ LLM 消耗告警：{s.usageAlert.date} 消耗 {fmtTokens(s.usageAlert.total)} tokens，超过上限 {fmtTokens(s.usageAlert.limit)}（可在设置页调整）
-        </div>
+      {s.system?.usageAlert && (
+        <Notice tone="danger">
+          LLM 消耗告警：{s.system.usageAlert.date} 消耗 {fmtTokens(s.system.usageAlert.total)} tokens，超过上限 {fmtTokens(s.system.usageAlert.limit)}。可在设置页调整上限。
+        </Notice>
+      )}
+      {s.system?.botAlert && (
+        <Notice tone="warn">
+          微信机器人心跳超时（最近一次 {s.system.botLastSeen ? ago(s.system.botLastSeen) : "从未"}），采集可能中断。请检查 OpenClaw 插件；期间可用「采集箱 → 手动导入」兜底。
+        </Notice>
       )}
 
-      {/* 第一行：待处理事项 + 快捷操作 */}
-      <div className="grid gap-4 xl:grid-cols-[1fr_430px]">
-        <Panel title="待处理事项">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <TodoCard title="待确认需求" value={v.pendingConfirm} delta={MOCK.delta.confirm} note={`${v.confirmProjects} 个项目有待确认需求`} cta="进入待确认" href="/confirm" tone="red" icon="📥" />
-            <TodoCard title="阻塞项" value={v.blocked} delta={MOCK.delta.blocked} note="影响开发进度" cta="处理阻塞" href="/branches" tone="rose" icon="⛰" />
-            <TodoCard title="待审批事项" value={v.pendingApprove} delta={MOCK.delta.approve} note="涉及资源、发布等审批" cta="去审批" href="/requirements?status=PENDING_ACCEPT" tone="amber" icon="👤" />
-            <TodoCard title="待开发资源" value={v.poolDepth} unit="项" note="预计排期等待时间" cta="查看详情" href="/pools" tone="blue" icon="🗂" />
-          </div>
-        </Panel>
+      {/* 第一行：需要人处理的事 */}
+      <KpiRow cols={4}>
+        <KpiTile
+          label="待确认需求"
+          value={s.todo.pendingConfirm}
+          sub={
+            s.todo.pendingConfirm > 0
+              ? `微信 ${s.todo.pendingConfirmSources.wechat} · 手动 ${s.todo.pendingConfirmSources.manual}${s.todo.pendingConfirmSources.web ? ` · 表单 ${s.todo.pendingConfirmSources.web}` : ""}`
+              : "队列已清空"
+          }
+          tone={s.todo.pendingConfirm > 0 ? "default" : "default"}
+          href={s.todo.pendingConfirm > 0 ? "/confirm" : undefined}
+        />
+        <KpiTile label="待裁决（部分通过）" value={s.todo.reviewing} sub={s.todo.reviewing > 0 ? "测试部分通过，需人工判断" : "无"} tone={s.todo.reviewing > 0 ? "warn" : "default"} href={s.todo.reviewing > 0 ? "/requirements?status=REVIEWING" : undefined} />
+        <KpiTile label="待验收" value={s.todo.pendingAccept} sub={s.todo.pendingAccept > 0 ? "测试全部通过，等你验收" : "无"} tone={s.todo.pendingAccept > 0 ? "warn" : "default"} href={s.todo.pendingAccept > 0 ? "/branches" : undefined} />
+        <KpiTile label="合并冲突" value={s.todo.conflicts} sub={s.todo.conflicts > 0 ? "feature → daily 合并失败" : "无"} tone={s.todo.conflicts > 0 ? "alert" : "default"} href={s.todo.conflicts > 0 ? "/branches" : undefined} />
+      </KpiRow>
 
-        <Panel title="快捷操作" className="hidden xl:block">
-          <div className="grid grid-cols-4 gap-x-2 gap-y-4">
-            {quickActions.map((a) => (
-              <Link key={a.label} href={a.href} className="group flex flex-col items-center gap-1.5">
-                <span className={`flex h-11 w-11 items-center justify-center rounded-2xl text-[17px] transition-transform group-hover:scale-105 ${a.tone}`}>
-                  {a.icon}
-                </span>
-                <span className="text-center text-[11px] leading-tight text-slate-600">{a.label}</span>
+      <div className="grid gap-4 xl:grid-cols-3">
+        <div className="flex flex-col gap-4 xl:col-span-2">
+          <Panel
+            title="项目状态"
+            pad={false}
+            extra={
+              <Link href="/pools" className="flex items-center gap-0.5 text-[12px] text-accent hover:underline">
+                执行看板 <Icon name="chevronRight" size={12} />
               </Link>
-            ))}
-          </div>
-        </Panel>
-      </div>
+            }
+          >
+            <Table head={["项目", "待确认", "待开发", "开发中", "测试中", "待验收", "冲突", "今日分支", "晚间合并"]}>
+              {rows.map((p) => (
+                <tr key={p.id}>
+                  <td className="font-medium text-ink">
+                    <Link href={`/pools?project=${p.id}`} className="hover:text-accent hover:underline">
+                      {p.name}
+                    </Link>
+                    {!p.active && <Chip tone="slate" className="ml-2">未启用</Chip>}
+                  </td>
+                  <td className="num">{p.pendingConfirm}</td>
+                  <td className="num">{p.ready}</td>
+                  <td className="num">{p.developing}</td>
+                  <td className="num">{p.testing}</td>
+                  <td className="num">{p.pendingAccept}</td>
+                  <td className={`num ${p.conflicts > 0 ? "font-semibold text-danger" : ""}`}>{p.conflicts}</td>
+                  <td className="font-mono text-[12px] text-ink-2">{p.todayBranch ? p.todayBranch.name : <span className="text-ink-3">未创建</span>}</td>
+                  <td>{p.todayBranch ? p.todayBranch.mergedToMain ? <Chip tone="green">已合并 main</Chip> : <Chip tone="amber">未合并</Chip> : <span className="text-ink-3">—</span>}</td>
+                </tr>
+              ))}
+              {noProjects && (
+                <EmptyRow colSpan={9}>
+                  还没有项目。
+                  <Link href="/settings" className="ml-1 text-accent hover:underline">
+                    去设置页添加
+                  </Link>
+                </EmptyRow>
+              )}
+            </Table>
+          </Panel>
 
-      {/* 第二行：项目健康度（3 卡 + 指标对比） */}
-      <div className="mt-4">
-        <div className="mb-2.5 flex items-center justify-between">
-          <h2 className="flex items-center gap-1.5 text-[14px] font-semibold text-slate-800">
-            项目健康度 <span className="text-[12px] font-normal text-slate-300">ⓘ</span>
-          </h2>
-          <Link href="/pools" className="text-[12px] font-medium text-blue-600 hover:underline">
-            查看全部项目 →
-          </Link>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {healthCards.map((h) => (
-            <HealthCard key={h.name} {...h} />
-          ))}
-          <Panel title="项目关键指标对比">
-            {/* MOCK：质量/资源/风险分数未量化,对比数据为示例 */}
-            <div className="mb-1 flex flex-wrap gap-x-3 gap-y-1">
-              {[
-                { n: "进度(%)", c: "#16A34A" },
-                { n: "质量(%)", c: "#2563EB" },
-                { n: "资源(%)", c: "#F59E0B" },
-                { n: "风险(越低越好)", c: "#EF4444" },
-              ].map((l) => (
-                <span key={l.n} className="inline-flex items-center gap-1 text-[10px] text-slate-500">
-                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: l.c }} />
-                  {l.n}
-                </span>
+          <Panel
+            title="近 14 天吞吐"
+            extra={
+              <Legend
+                items={[
+                  { name: "新增需求", color: CHART_COLORS[0] },
+                  { name: "验收完成", color: CHART_COLORS[1] },
+                ]}
+              />
+            }
+          >
+            {s.trend14d.created.some((v) => v > 0) || s.trend14d.accepted.some((v) => v > 0) ? (
+              <LineChart
+                labels={s.trend14d.labels}
+                series={[
+                  { name: "新增需求", values: s.trend14d.created, color: CHART_COLORS[0] },
+                  { name: "验收完成", values: s.trend14d.accepted, color: CHART_COLORS[1] },
+                ]}
+              />
+            ) : (
+              <EmptyState compact icon="chart" title="近 14 天没有需求流转" desc="需求进入待确认后会在这里出现。" />
+            )}
+            <div className="mt-3 grid grid-cols-3 gap-3 border-t border-line pt-3">
+              {qualityItems.map((q) => (
+                <div key={q.label} className="flex flex-col gap-0.5">
+                  <span className="text-[11px] text-ink-3">{q.label}</span>
+                  <span className="num text-[15px] font-semibold text-ink">{q.value}</span>
+                </div>
               ))}
             </div>
-            <GroupedBars
-              groups={chartProjects.map((p, i) => ({ label: p.name, values: MOCK.compare[i % MOCK.compare.length] }))}
-              colors={["#16A34A", "#2563EB", "#F59E0B", "#EF4444"]}
-            />
+            <p className="mt-1.5 text-[11px] text-ink-3">质量指标基于近 30 天已验收需求（样本 {s.quality.samples}）：前置时间 = 流入到验收；返工 = 测试失败回池。</p>
           </Panel>
         </div>
+
+        <Panel
+          title="最近动态"
+          extra={
+            <Link href="/requirements" className="flex items-center gap-0.5 text-[12px] text-accent hover:underline">
+              全部需求 <Icon name="chevronRight" size={12} />
+            </Link>
+          }
+        >
+          {feed.length === 0 ? (
+            <EmptyState compact icon="clock" title="暂无动态" desc="需求确认、认领、提交、测试等事件会实时出现。" />
+          ) : (
+            <ul className="divide-y divide-line">
+              {feed.map((e, i) => {
+                const tone = /冲突|不通过|受阻|驳回/.test(e.note) ? "bg-danger" : /验收|通过/.test(e.note) ? "bg-ok" : "bg-accent";
+                return (
+                  <li key={i} className="flex gap-2.5 py-2.5 first:pt-0 last:pb-0">
+                    <span className={`mt-[7px] h-[7px] w-[7px] shrink-0 rounded-full ${tone}`} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <Link href={`/requirements?q=REQ-${e.seq}`} className="truncate text-[13px] font-medium text-ink hover:text-accent">
+                          REQ-{e.seq} {e.title}
+                        </Link>
+                        <span className="shrink-0 text-[11px] text-ink-3">{ago(e.at)}</span>
+                      </div>
+                      <p className="truncate text-[12px] text-ink-2">
+                        <span className="font-mono text-ink-3">{actorLabel(e.actor)}</span> · {e.note}
+                      </p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Panel>
       </div>
 
-      {/* 第三行：全局关键指标 + 项目进度趋势 + AI 每日进度趋势 */}
-      <div className="mt-4 grid gap-4 xl:grid-cols-3">
-        <Panel title="全局关键指标（今日）">
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-            {metricCells.map((m) => (
-              <div key={m.label} className={`rounded-lg border p-3 ${m.cell}`}>
-                <p className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                  <span className="text-[13px]">{m.icon}</span>
-                  {m.label}
-                </p>
-                <p className={`mt-1.5 whitespace-nowrap text-[20px] font-bold leading-none tabular-nums ${m.alert ? "text-red-600" : "text-slate-900"}`}>{m.value}</p>
-                <p className="mt-1 text-[10px] text-slate-400">{m.delta}</p>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <Panel
+          title="智能体在线"
+          extra={
+            <span className="num text-[12px] text-ink-3">
+              {s.agentsOnline.filter((a) => a.active).length} / {s.agentsOnline.length} 活跃
+            </span>
+          }
+        >
+          {s.agentsOnline.length === 0 ? (
+            <EmptyState compact icon="bot" title="尚无智能体账号" action={<LinkButton href="/agents" size="sm">去创建</LinkButton>} />
+          ) : (
+            <ul className="divide-y divide-line">
+              {s.agentsOnline.slice(0, 6).map((a) => (
+                <li key={a.username} className="flex items-center gap-2.5 py-2 first:pt-0 last:pb-0">
+                  <span className={`h-[7px] w-[7px] rounded-full ${a.active ? "bg-ok" : "bg-line-strong"}`} />
+                  <span className="flex-1 truncate font-mono text-[12px] text-ink">{a.username}</span>
+                  <span className="truncate text-[12px] text-ink-2">{a.current ?? (a.lastSeenAt ? `${ago(a.lastSeenAt)}在线` : "从未连接")}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+
+        <Panel title="LLM 用量（7 天）">
+          {llmTotal7d === 0 ? (
+            <EmptyState compact icon="zap" title="近 7 天没有调用" desc="拆解、排序、出题时记录 token 用量。" />
+          ) : (
+            <div className="flex flex-col gap-2">
+              <BarChart data={s.llm7d.byDay} showValues />
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[12px] text-ink-2">
+                <span>
+                  合计 <b className="num text-ink">{fmtTokens(llmTotal7d)}</b> tokens
+                  {s.llmCost7d != null && (
+                    <span className="ml-1 text-ink-3">
+                      · 约 ${s.llmCost7d.toFixed(2)}
+                    </span>
+                  )}
+                </span>
+                <span className="text-ink-3">
+                  今日 {fmtTokens(s.llmTodayTokens)}
+                  {s.llmLimit > 0 ? ` / 上限 ${fmtTokens(s.llmLimit)}` : " · 未设上限"}
+                </span>
               </div>
-            ))}
-          </div>
-        </Panel>
-
-        <Panel title="项目进度趋势" extra={<span className="rounded-md border border-slate-200 px-2 py-0.5 text-[11px] text-slate-500">近7天 ∨</span>}>
-          {/* MOCK：项目级进度历史未落库,趋势为示例;项目名取真实项目 */}
-          <AreaTrend
-            labels={MOCK.progressTrend.labels}
-            series={chartProjects.map((p, i) => ({ name: p.name, values: MOCK.progressTrend.series[i % MOCK.progressTrend.series.length], color: trendColors[i % trendColors.length] }))}
-            height={140}
-          />
-        </Panel>
-
-        <Panel
-          title="AI 每日进度趋势"
-          extra={
-            <span className="flex items-center gap-2">
-              <Link href="/reports" className="text-[12px] font-medium text-blue-600 hover:underline">
-                查看历史报告 →
-              </Link>
-              <span className="rounded-md border border-slate-200 px-2 py-0.5 text-[11px] text-slate-500">近7天 ∨</span>
-            </span>
-          }
-        >
-          {/* 真实数据优先：近 7 天验收完成数;全为 0 时回退 MOCK 曲线 */}
-          <p className="mb-1 text-[10px] text-slate-400">完成事项数（个）</p>
-          <AreaTrend
-            labels={MOCK.progressTrend.labels}
-            series={[
-              {
-                name: "完成事项数",
-                values: s.kpis.spark.accepted.some((x) => x > 0) ? s.kpis.spark.accepted : MOCK.dailyDone,
-                color: CHART_COLORS[0],
-              },
-            ]}
-            height={132}
-          />
-        </Panel>
-      </div>
-
-      {/* 第四行：Agent 实时动态 + 资源使用情况 + 项目类型分布 + AI 每日报告摘要 */}
-      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Panel
-          title="Agent 实时动态"
-          extra={
-            <Link href="/agents" className="text-[12px] font-medium text-blue-600 hover:underline">
-              查看全部 →
-            </Link>
-          }
-        >
-          <ul className="divide-y divide-slate-100">
-            {feed.map((e, i) => (
-              <li key={i} className="flex items-start gap-2.5 py-2.5 first:pt-0 last:pb-0">
-                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[12px]">🤖</span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] font-medium text-slate-800">{e.name}</p>
-                  <p className="truncate text-[11px] text-slate-400">{e.action}</p>
+              {s.llm7d.byRole.length > 0 && (
+                <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-line pt-2 text-[11px] text-ink-3">
+                  {s.llm7d.byRole.map((r) => (
+                    <span key={r.name}>
+                      {r.name} <b className="num text-ink-2">{fmtTokens(r.value)}</b>
+                    </span>
+                  ))}
                 </div>
-                <span className="flex shrink-0 items-center gap-1 text-[11px] text-slate-300">
-                  {e.time} <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
-                </span>
-              </li>
-            ))}
-          </ul>
+              )}
+            </div>
+          )}
         </Panel>
 
-        <Panel title="资源使用情况">
-          {/* MOCK：主机资源监控未接入,示例数据 */}
-          <ul className="space-y-3.5">
-            {MOCK.resources.map((r) => (
-              <li key={r.name}>
-                <div className="flex items-center gap-2">
-                  <span className={`flex h-6 w-6 items-center justify-center rounded-md text-[12px] ${r.tone}`}>{r.icon}</span>
-                  <span className="w-14 text-[12px] text-slate-600">{r.name}</span>
-                  <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
-                    <span className="block h-full rounded-full" style={{ width: `${r.pct}%`, background: r.bar }} />
-                  </span>
-                  <span className="w-9 text-right text-[12px] font-medium tabular-nums text-slate-700">{r.pct}%</span>
-                </div>
-                <p className="mt-0.5 pl-8 text-right text-[10px] text-slate-400">{r.detail}</p>
-              </li>
-            ))}
-          </ul>
-        </Panel>
-
-        <Panel title="项目类型分布">
-          {/* MOCK：项目类型字段未落库,示例分布 */}
-          <ul className="space-y-3.5">
-            {MOCK.projectTypes.map((t) => (
-              <li key={t.name} className="flex items-center gap-2">
-                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: t.color }} />
-                <span className="w-20 truncate text-[12px] text-slate-600">{t.name}</span>
-                <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
-                  <span className="block h-full rounded-full" style={{ width: `${t.pct}%`, background: t.color }} />
-                </span>
-                <span className="w-14 text-right text-[12px] tabular-nums text-slate-600">
-                  {t.count} <span className="text-slate-400">({t.pct}%)</span>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Panel>
-
-        <Panel title="AI 每日报告摘要">
-          <p className="text-[14px] font-bold text-slate-900">{dateStr}</p>
-          <ul className="mt-2.5 space-y-1.5 text-[12px] text-slate-600">
-            <li className="flex gap-1.5">
-              <span className="text-amber-500">✓</span> 全局进度：共完成 {v.doneToday} 项任务，较昨日提升 18%
+        <Panel title="系统状态">
+          <ul className="divide-y divide-line text-[13px]">
+            <li className="flex items-center justify-between gap-2 py-2 first:pt-0">
+              <span>微信 Bot 心跳</span>
+              <span className="flex items-center gap-2">
+                <span className="text-[12px] text-ink-2">{s.system.botLastSeen ? ago(s.system.botLastSeen) : "未接入"}</span>
+                {s.system.botLastSeen ? s.system.botAlert ? <Chip tone="red">超时</Chip> : <Chip tone="green">正常</Chip> : <Chip tone="slate">未接入</Chip>}
+              </span>
             </li>
-            <li className="flex gap-1.5">
-              <span className="text-green-500">✓</span> 待确认需求 {v.pendingConfirm} 项，待审批 {v.pendingApprove} 项
+            <li className="flex items-center justify-between gap-2 py-2">
+              <span>队列积压</span>
+              <span className="flex items-center gap-2">
+                {s.system.queue ? (
+                  <>
+                    <span className="num text-[12px] text-ink-2">
+                      llm {s.system.queue.llm} · git {s.system.queue.git}
+                      {s.system.queue.failed > 0 ? ` · 失败 ${s.system.queue.failed}` : ""}
+                    </span>
+                    {s.system.queue.failed > 0 ? <Chip tone="red">有失败</Chip> : s.system.queue.llm + s.system.queue.git > 20 ? <Chip tone="amber">积压</Chip> : <Chip tone="green">正常</Chip>}
+                  </>
+                ) : (
+                  <Chip tone="red">Redis 不可达</Chip>
+                )}
+              </span>
             </li>
-            <li className="flex gap-1.5">
-              <span className={Number(v.blocked) > 0 ? "text-red-500" : "text-green-500"}>{Number(v.blocked) > 0 ? "!" : "✓"}</span>
-              {Number(v.blocked) > 0 ? `有 ${v.blocked} 个阻塞项需要优先处理` : "当前无阻塞项"}
+            <li className="flex items-center justify-between gap-2 py-2">
+              <span>最近日报</span>
+              <span className="flex items-center gap-2">
+                {s.system.latestReport ? (
+                  <>
+                    <Link href="/reports" className="text-[12px] text-ink-2 hover:text-accent">
+                      {s.system.latestReport.project} · {fmtDateTime(s.system.latestReport.createdAt)}
+                    </Link>
+                    {s.system.latestReport.pushed ? <Chip tone="green">已推送</Chip> : <Chip tone="slate">未推送</Chip>}
+                  </>
+                ) : (
+                  <Chip tone="slate">尚未生成</Chip>
+                )}
+              </span>
             </li>
-            <li className="flex gap-1.5">
-              <span className="text-green-500">✓</span> 共消耗 LLM Token {v.llmWeek}，费用 {llmTodayReal > 0 ? "以账单为准" : MOCK.llmCost}
+            <li className="flex items-center justify-between gap-2 py-2 last:pb-0">
+              <span>活跃项目</span>
+              <span className="num text-[12px] text-ink-2">
+                {rows.filter((p) => p.active).length} / {rows.length}
+              </span>
             </li>
           </ul>
-          <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-100 pt-2.5">
-            <span className="text-[10px] text-slate-400">
-              报告生成时间：{dateStr} {MOCK.reportTime}
-            </span>
-            <Link href="/reports" className="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-blue-700">
-              查看完整日报
-            </Link>
-          </div>
         </Panel>
       </div>
     </PageShell>

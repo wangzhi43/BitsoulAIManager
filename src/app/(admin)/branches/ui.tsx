@@ -1,760 +1,361 @@
 "use client";
 
-// 晚间审查与验收中心（严格按 docs/ui_design/XA9hhmonfsFrGAye.png 逐区块复现）：
-// 筛选行（日期 + 分支下拉 + 构建徽标）
-// 第一行：分支概览卡 + 5 个统计卡（提交 / 文件变更 / 需求数量 / 测试报告 / 冲突状态）
-// Tab 行（变更摘要完整实现，其余 Tab 显示「数据接入中」占位）
-// 主体左列：需求分组变更摘要表（类型徽标 / 变更量 / 状态图例）+ 最近提交表
-// 右列：分支合并卡（条件清单 + 大按钮 + 预检）+ 业务验收卡（三数字格 + 批量按钮 + 待验收复选列表）
-
-import { useMemo, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Panel, Table, Chip, btnCls } from "@/components/ui";
+import { useRouter } from "next/navigation";
+import type { BranchSummary } from "@/lib/branch-summary";
+import { Panel, KpiRow, KpiTile, Table, EmptyRow, Chip, EmptyState, Notice, Label, btnCls, fmtDateTime, ago } from "@/components/ui";
 import { StatusChip } from "@/components/status";
+import { Icon } from "@/components/icons";
+import { ConfirmDialog, useAction, useToast } from "@/components/ui-client";
 
-export interface ReqItem {
+export interface BranchOption {
+  id: string;
+  project: string;
+  name: string;
+  mergedToMain: boolean;
+  date: string;
+}
+export interface ReqRow {
   id: string;
   seq: number;
   title: string;
   status: string;
-  conflict: boolean;
-  submitNote: string | null;
   agent: string | null;
   featureBranch: string | null;
-  commits: string[];
-  submittedAt: string | null;
-  reports: { conclusion: string; passRate: number }[];
+  devStatus: string | null;
+  submitNote: string | null;
+  report: { conclusion: string; passRate: number } | null;
+  conflictFiles: string[];
 }
-
-export interface BranchItem {
+export interface BranchDetail {
   id: string;
   project: string;
   name: string;
-  date: string | null;
-  createdAt: string | null;
   mergedToMain: boolean;
   mergedAt: string | null;
-  requirements: ReqItem[];
+  createdAt: string;
+  summary: BranchSummary | null;
+  requirements: ReqRow[];
 }
 
-const MERGED_STATUSES = ["PENDING_TEST", "TESTING", "TESTED", "REVIEWING", "PENDING_ACCEPT", "ACCEPTED"];
+const DEMO_MSG = "展示模式下操作不生效";
 
-// ---------- MOCK 数据：真实链路未接入时的界面填充，后续替换 ----------
-// 优先真实数据，为空时回退到这里的 mock，保证视觉与参考图一致
-const MOCK = {
-  build: { id: 1287, passed: true }, // CI 构建未接入
-  creator: "CI Bot", // 分支创建人未记录（当前由系统 02:00 定时创建）
-  createdTime: "09:01", // 创建时间缺失时的回退展示
-  baseCommit: "a1b2c3d", // 基准 commit hash 未记录
-  commitTotal: 23, // 分支总提交数（devTask 未上报 commit 时回退）
-  lineStat: { plus: 18, minus: 5 }, // 行级增删统计未接入
-  fileChanges: { total: 128, added: 82, modified: 36, deleted: 10 }, // 文件变更统计未接入
-  requiredTests: { passed: 28, total: 28 }, // 必测项统计未接入
-  returned: 1, // 「已退回」计数未持久化（退回后状态回到 READY）
-  commits: [
-    { sha: "e7f3a9b", msg: "feat(pay): 支付宝支付对接与回调处理", author: "张三", time: "20:18", req: "支付渠道支持（支付宝）" },
-    { sha: "9c1d4ef", msg: "fix(msg): 修复未读计数在多端同步不一致问题", author: "李四", time: "18:47", req: "消息中心未读计数修复" },
-    { sha: "3b2a7c1", msg: "refactor(order): 拆分订单服务，优化事务边界", author: "王五", time: "17:32", req: "订单流程重构" },
-    { sha: "1a2b3c4", msg: "test: 补充支付回调失败场景测试用例", author: "赵六", time: "16:05", req: "支付渠道支持（支付宝）" },
-  ], // 提交明细（message/作者/时间）未接入 git 日志
-};
-
-// MOCK 数据：库中尚无每日分支时整页回退展示的示例分支（真实分支出现后自动切换），后续替换
-const MOCK_BRANCH: BranchItem = {
-  id: "mock-branch",
-  project: "示例项目",
-  name: "daily/2025-05-20",
-  date: null,
-  createdAt: null,
-  mergedToMain: false,
-  mergedAt: null,
-  requirements: [
-    { id: "m1", seq: 9101, title: "用户登录优化", status: "ACCEPTED", conflict: false, submitNote: "feature/login-opt 登录页一键登录与引导绑定", agent: "Coder-01", featureBranch: "feature/login-opt", commits: [], submittedAt: null, reports: [{ conclusion: "PASS", passRate: 1 }] },
-    { id: "m2", seq: 9102, title: "订单流程重构", status: "ACCEPTED", conflict: false, submitNote: "拆分订单服务，优化事务边界", agent: "Coder-04", featureBranch: "feature/order-refactor", commits: [], submittedAt: null, reports: [{ conclusion: "PASS", passRate: 1 }] },
-    { id: "m3", seq: 9103, title: "支付渠道支持（支付宝）", status: "PENDING_ACCEPT", conflict: false, submitNote: "新增支付宝支付能力与回调处理", agent: "Coder-02", featureBranch: "feature/pay-alipay", commits: [], submittedAt: null, reports: [{ conclusion: "PASS", passRate: 1 }] },
-    { id: "m4", seq: 9104, title: "消息中心未读计数修复", status: "PENDING_ACCEPT", conflict: false, submitNote: "修复未读计数多端同步不一致", agent: "Coder-03", featureBranch: "feature/msg-fix", commits: [], submittedAt: null, reports: [{ conclusion: "PASS", passRate: 1 }] },
-    { id: "m5", seq: 9105, title: "导出功能性能优化", status: "PENDING_ACCEPT", conflict: false, submitNote: "优化大数据量导出耗时", agent: "Coder-01", featureBranch: "feature/export-opt", commits: [], submittedAt: null, reports: [{ conclusion: "PASS", passRate: 1 }] },
-    { id: "m6", seq: 9106, title: "权限校验问题修复", status: "TESTING", conflict: false, submitNote: "修复越权访问路径", agent: "Coder-05", featureBranch: "feature/auth-fix", commits: [], submittedAt: null, reports: [] },
-    { id: "m7", seq: 9107, title: "短信通知能力", status: "DEVELOPING", conflict: false, submitNote: null, agent: "Coder-06", featureBranch: "feature/sms", commits: [], submittedAt: null, reports: [] },
-    { id: "m8", seq: 9108, title: "数据报表样式优化", status: "READY", conflict: false, submitNote: null, agent: null, featureBranch: "feature/report-style", commits: [], submittedAt: null, reports: [] },
-  ],
-};
-
-// MOCK 数据：需求类型字段未落库，按标题关键词推断，后续替换为真实类型
-function reqType(title: string): { label: string; tone: "green" | "blue" | "amber" | "violet" } {
-  if (/修复|缺陷|问题|bug/i.test(title)) return { label: "缺陷", tone: "amber" };
-  if (/重构/.test(title)) return { label: "重构", tone: "blue" };
-  if (/优化|完善|性能/.test(title)) return { label: "优化", tone: "violet" };
-  return { label: "新功能", tone: "green" };
-}
-
-// MOCK 数据：行级 diff 未接入，按 seq 生成稳定的占位数值，后续替换
-function mockDiff(seq: number) {
-  return {
-    files: 3 + ((seq * 5) % 12),
-    plus: 6 + ((seq * 7) % 30),
-    minus: (seq * 3) % 9,
-  };
-}
-// ---------- MOCK 数据结束 ----------
-
-const GREEN_BTN =
-  "inline-flex items-center justify-center gap-1.5 rounded-lg bg-green-600 font-medium text-white transition-colors hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50";
-const AMBER_BTN =
-  "inline-flex items-center justify-center gap-1.5 rounded-lg bg-amber-500 font-medium text-white transition-colors hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50";
-
-function fmtDateTime(iso: string | null) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
-function branchDateLabel(b: BranchItem) {
-  if (b.date) return fmtDateTime(b.date).slice(0, 10);
-  const m = b.name.match(/(\d{4})-?(\d{2})-?(\d{2})/);
-  return m ? `${m[1]}-${m[2]}-${m[3]}` : "";
-}
-
-function TestChips({ reports }: { reports: ReqItem["reports"] }) {
-  // 真实测试报告优先；无报告时回退 MOCK 视觉「✓ 通过」保持与参考图一致
-  if (reports.length === 0) return <Chip tone="green">✓ 通过</Chip>;
+export function RefreshDiffButton({ branchId, demo }: { branchId: string; demo: boolean }) {
+  const toast = useToast();
+  const { run, busy } = useAction();
   return (
-    <span className="inline-flex flex-wrap gap-1">
-      {reports.map((rep, i) => (
-        <Chip key={i} tone={rep.conclusion === "PASS" ? "green" : "red"}>
-          {rep.conclusion === "PASS" ? "✓ 通过" : "✗ 未通过"} {Math.round(rep.passRate * 100)}%
-        </Chip>
-      ))}
-    </span>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  sub,
-  tone = "default",
-}: {
-  label: string;
-  value: ReactNode;
-  sub?: ReactNode;
-  tone?: "default" | "green" | "red";
-}) {
-  const valueCls = tone === "green" ? "text-green-600" : tone === "red" ? "text-red-500" : "text-slate-900";
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-      <p className="text-[12px] text-slate-500">{label}</p>
-      <p className={`mt-1 text-[22px] font-bold leading-none tabular-nums tracking-tight ${valueCls}`}>{value}</p>
-      {sub && <p className="mt-1.5 text-[11px] text-slate-400">{sub}</p>}
-    </div>
-  );
-}
-
-function LegendDot({ cls, label }: { cls: string; label: string }) {
-  return (
-    <span className="inline-flex items-center gap-1">
-      <span className={`h-1.5 w-1.5 rounded-full ${cls}`} />
-      {label}
-    </span>
-  );
-}
-
-function CheckItem({ ok, okText, failText, warn = false }: { ok: boolean; okText: string; failText: string; warn?: boolean }) {
-  return (
-    <li className={`flex items-center gap-1.5 ${ok ? "text-green-600" : warn ? "text-amber-600" : "text-red-500"}`}>
-      <span>{ok ? "✓" : warn ? "⚠" : "✗"}</span>
-      <span>{ok ? okText : failText}</span>
-    </li>
-  );
-}
-
-// ---------- 分支合并 ----------
-
-export function MergeButton({
-  branchId,
-  branchName,
-  disabled,
-  demo,
-}: {
-  branchId: string;
-  branchName?: string;
-  disabled: boolean;
-  demo?: boolean;
-}) {
-  const router = useRouter();
-  const [busy, setBusy] = useState(false);
-
-  async function merge() {
-    if (demo) {
-      alert("展示模式下操作不生效");
-      return;
-    }
-    if (!window.confirm(`确认把 ${branchName ?? "该当日分支"} 合并回 main？合并后无法撤销`)) return;
-    setBusy(true);
-    const res = await fetch(`/api/admin/branches/${branchId}/merge`, { method: "POST" });
-    if (!res.ok) {
-      const data = await res.json().catch(() => null);
-      alert(data?.error?.message ?? "合并失败");
-    } else {
-      alert("已提交合并，稍后刷新查看结果");
-      router.refresh();
-    }
-    setBusy(false);
-  }
-
-  return (
-    <button onClick={merge} disabled={disabled || busy} className={`mt-3 w-full ${btnCls("primary")}`}>
-      {busy ? "提交中…" : `⎇ 合并 ${branchName ?? "分支"} 到 main`}
+    <button
+      className={btnCls("secondary")}
+      disabled={busy === "refresh"}
+      onClick={() => (demo ? toast("info", DEMO_MSG) : run("refresh", `/api/admin/branches/${branchId}/refresh`, { method: "POST", body: {} }, "已排队刷新 diff，数秒后自动更新"))}
+    >
+      <Icon name="refresh" size={14} />
+      刷新 diff
     </button>
   );
 }
 
-function MergePanel({ branch, demo }: { branch: BranchItem; demo: boolean }) {
-  const reqs = branch.requirements;
-  const conflicts = reqs.filter((r) => r.conflict).length;
-  const mergedCount = reqs.filter((r) => MERGED_STATUSES.includes(r.status)).length;
-  const reports = reqs.flatMap((r) => r.reports);
-  const testsAllPass = reports.length === 0 || reports.every((r) => r.conclusion === "PASS");
-  const canMerge = !branch.mergedToMain && conflicts === 0 && mergedCount > 0;
-
-  return (
-    <Panel title="分支合并" extra={<span className="text-[11px] text-slate-400">仅在满足条件时可用</span>}>
-      {branch.mergedToMain ? (
-        <div className="rounded-lg bg-green-50 px-3 py-2.5 text-[13px] text-green-700">
-          ✓ 已合并到 main（{fmtDateTime(branch.mergedAt)}）
-        </div>
-      ) : (
-        <>
-          <p className={`mb-2 text-[13px] font-medium ${canMerge ? "text-green-600" : "text-amber-600"}`}>
-            {canMerge ? "✓ 当前分支满足合并条件，可安全合并" : "⚠ 当前分支尚未满足合并条件"}
-          </p>
-          <ul className="space-y-1.5 text-[12px]">
-            <CheckItem ok={conflicts === 0} okText="无冲突" failText={`存在 ${conflicts} 个合并冲突`} />
-            <CheckItem
-              ok={testsAllPass}
-              warn
-              okText={
-                reports.length > 0
-                  ? `测试报告全部通过（${reports.length} 份）`
-                  : /* MOCK：必测项统计未接入，回退展示 */ `必测项已全部通过（${MOCK.requiredTests.passed}/${MOCK.requiredTests.total}）`
-              }
-              failText="存在未通过的测试报告"
-            />
-            <CheckItem ok={mergedCount > 0} okText={`构建通过 · ${mergedCount} 个需求已并入 daily`} failText="尚无需求并入 daily" />
-          </ul>
-          <MergeButton branchId={branch.id} branchName={branch.name} disabled={!canMerge} demo={demo} />
-          <p className="mt-2 text-center text-[11px] text-amber-600">⚠ 合并后将无法撤销，请确认所有验收工作已完成。</p>
-          <button
-            onClick={() => alert("合并前预检接入中：当前已根据冲突标记与需求状态完成基础检查")}
-            className={`mt-2 w-full ${btnCls("secondary")}`}
-          >
-            合并前预检
-          </button>
-        </>
-      )}
-    </Panel>
-  );
+function ReportChip({ r }: { r: ReqRow["report"] }) {
+  if (!r) return <Chip tone="slate">无报告</Chip>;
+  const pct = Math.round(r.passRate * 100);
+  if (r.conclusion === "PASS" && pct === 100) return <Chip tone="green">PASS 100%</Chip>;
+  if (r.conclusion === "PASS") return <Chip tone="amber">部分 {pct}%</Chip>;
+  return <Chip tone="red">{r.conclusion} {pct}%</Chip>;
 }
 
-// ---------- 业务验收 ----------
-
-function AcceptPanel({ branch, demo }: { branch: BranchItem; demo: boolean }) {
+export function ReviewCenter({ options, detail, missingToday, demo }: { options: BranchOption[]; detail: BranchDetail | null; missingToday: { id: string; name: string }[]; demo: boolean }) {
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
-  const [selected, setSelected] = useState<string[]>([]);
+  const toast = useToast();
+  const { run, busy } = useAction();
+  const [dlg, setDlg] = useState<null | { kind: "merge" | "force" | "exclude" | "retry" | "cherry" | "accept" | "sendback"; req?: ReqRow }>(null);
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [allCommits, setAllCommits] = useState(false);
 
-  const reqs = branch.requirements;
-  const pendingAccept = reqs.filter((r) => r.status === "PENDING_ACCEPT").length;
-  const accepted = reqs.filter((r) => r.status === "ACCEPTED").length;
-  const actionable = reqs.filter((r) => r.status === "PENDING_ACCEPT" || r.status === "REVIEWING");
-  const selPending = actionable.filter((r) => selected.includes(r.id) && r.status === "PENDING_ACCEPT").length;
-  const selReviewing = actionable.filter((r) => selected.includes(r.id) && r.status === "REVIEWING").length;
-  const allChecked = actionable.length > 0 && actionable.every((r) => selected.includes(r.id));
+  const guard = () => {
+    if (demo) toast("info", DEMO_MSG);
+    return demo;
+  };
 
-  function toggle(id: string) {
-    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  }
-  function toggleAll() {
-    setSelected(allChecked ? [] : actionable.map((r) => r.id));
-  }
+  const createBtn = (p: { id: string; name: string }) => (
+    <button key={p.id} className={btnCls("secondary", "sm")} disabled={busy === `create-${p.id}`} onClick={() => (guard() ? null : run(`create-${p.id}`, "/api/admin/branches", { body: { projectId: p.id } }, `已排队创建 ${p.name} 今日分支`))}>
+      <Icon name="plus" size={13} />
+      为 {p.name} 创建今日分支
+    </button>
+  );
 
-  async function call(id: string, action: string, note?: string) {
-    const res = await fetch(`/api/admin/requirements/${id}/accept`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action, note }),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => null);
-      throw new Error(data?.error?.message ?? "操作失败");
-    }
-  }
+  const computed = useMemo(() => {
+    if (!detail) return null;
+    const s = detail.summary;
+    const perReq = new Map((s?.perRequirement ?? []).map((p) => [p.seq, p]));
+    const merged = detail.requirements.filter((r) => r.devStatus === "MERGED" || (perReq.get(r.seq)?.mergeSha ?? null) !== null);
+    const conflicts = detail.requirements.filter((r) => r.devStatus === "CONFLICT");
+    const passing = merged.filter((r) => r.report?.conclusion === "PASS" && r.report.passRate >= 1);
+    const lacking = merged.filter((r) => !(r.report?.conclusion === "PASS" && r.report.passRate >= 1));
+    const pendingAccept = detail.requirements.filter((r) => r.status === "PENDING_ACCEPT");
+    const reviewing = detail.requirements.filter((r) => r.status === "REVIEWING");
+    const authors = new Set((s?.commits ?? []).map((c) => c.author)).size;
+    return { perReq, merged, conflicts, passing, lacking, pendingAccept, reviewing, authors };
+  }, [detail]);
 
-  async function single(r: ReqItem, action: "accept" | "approve_partial" | "send_back") {
-    if (demo) {
-      alert("展示模式下操作不生效");
-      return;
-    }
-    const note = action === "send_back" ? window.prompt("退回原因（可选）") ?? undefined : undefined;
-    setBusy(true);
-    try {
-      await call(r.id, action, note);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "操作失败");
-    }
-    router.refresh();
-    setBusy(false);
-  }
-
-  async function batch(action: "accept" | "send_back") {
-    if (demo) {
-      alert("展示模式下操作不生效");
-      return;
-    }
-    const eligible = actionable.filter(
-      (r) => selected.includes(r.id) && (action === "accept" ? r.status === "PENDING_ACCEPT" : r.status === "REVIEWING"),
+  if (!detail || !computed) {
+    return (
+      <div className="rounded-lg border border-line bg-surface">
+        <EmptyState icon="branch" title="尚未创建每日分支" desc="每天 02:00 自动为活跃项目从 main 创建 daily 分支；也可以现在手动创建。" action={missingToday.length ? <div className="flex flex-wrap justify-center gap-2">{missingToday.map(createBtn)}</div> : undefined} />
+      </div>
     );
-    if (eligible.length === 0) {
-      alert(action === "accept" ? "请先勾选待验收的需求" : "退回操作用于测试部分通过（待裁决）的需求，请先勾选");
-      return;
-    }
-    const label = action === "accept" ? "验收通过" : "退回待开发";
-    if (!window.confirm(`确认对 ${eligible.length} 个需求执行「${label}」？`)) return;
-    const note = action === "send_back" ? window.prompt("退回原因（可选）") ?? undefined : undefined;
-    setBusy(true);
-    const errors: string[] = [];
-    for (const r of eligible) {
-      try {
-        await call(r.id, action, note);
-      } catch (e) {
-        errors.push(`REQ-${r.seq}：${e instanceof Error ? e.message : "失败"}`);
-      }
-    }
-    if (errors.length > 0) alert(errors.join("\n"));
-    setSelected([]);
-    router.refresh();
-    setBusy(false);
   }
 
-  return (
-    <Panel title="业务验收" extra={<span className="text-[11px] text-slate-400">与分支合并分离</span>}>
-      {/* 三数字格：待验收 / 已验收 / 已退回（已退回未持久化，回退 MOCK） */}
-      <div className="grid grid-cols-3 gap-2">
-        <div className="rounded-lg bg-slate-50 p-3 text-center">
-          <p className="text-[20px] font-bold leading-none tabular-nums text-amber-600">{pendingAccept}</p>
-          <p className="mt-1 text-[11px] text-slate-400">待验收</p>
-        </div>
-        <div className="rounded-lg bg-slate-50 p-3 text-center">
-          <p className="text-[20px] font-bold leading-none tabular-nums text-green-600">{accepted}</p>
-          <p className="mt-1 text-[11px] text-slate-400">已验收</p>
-        </div>
-        <div className="rounded-lg bg-slate-50 p-3 text-center">
-          <p className="text-[20px] font-bold leading-none tabular-nums text-red-500">{MOCK.returned}</p>
-          <p className="mt-1 text-[11px] text-slate-400">已退回</p>
-        </div>
-      </div>
+  const d = detail;
+  const s = d.summary;
+  const c = computed;
+  const noConflict = c.conflicts.length === 0;
+  const allPass = c.lacking.length === 0;
+  const acceptDone = c.pendingAccept.length + c.reviewing.length === 0;
+  const canMerge = !d.mergedToMain && noConflict && allPass;
+  const canForce = !d.mergedToMain && noConflict && !allPass;
+  const base = (id: string) => `/api/admin/requirements/${id}`;
 
-      {/* 批量操作按钮行 */}
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        <button disabled={busy} onClick={() => batch("accept")} className={`${GREEN_BTN} px-2 py-1.5 text-[12px]`}>
-          ✓ 验收通过
-        </button>
-        <button disabled={busy} onClick={() => batch("send_back")} className={`${AMBER_BTN} px-2 py-1.5 text-[12px]`}>
-          ≫ 退回待开发
-        </button>
-        <button onClick={() => alert("验收记录视图接入中：可在需求详情页查看流转时间线")} className={btnCls("secondary", "sm")}>
-          ☰ 查看记录
-        </button>
-      </div>
+  async function doMerge(force: boolean, reason?: string) {
+    if (guard()) return;
+    const r = await run("merge", `/api/admin/branches/${d.id}/merge${force ? "?force=1" : ""}`, { method: "POST", body: reason ? { reason } : {} }, "已排队合并，稍后刷新查看结果");
+    if (r.ok) setDlg(null);
+  }
+  async function acceptMany(ids: string[]) {
+    if (guard()) return;
+    for (const id of ids) {
+      const r = await run(`accept-${id}`, base(id) + "/accept", { method: "POST", body: { action: "accept" } });
+      if (!r.ok) break;
+    }
+    toast("ok", `已验收 ${ids.length} 项`);
+    setChecked(new Set());
+  }
 
-      {/* 待验收需求复选列表 */}
-      <div className="mt-3 border-t border-slate-100 pt-3">
-        <h3 className="mb-2 text-[12px] font-semibold text-slate-700">待验收需求</h3>
-        {actionable.length === 0 ? (
-          <p className="py-4 text-center text-[12px] text-slate-400">暂无待验收或待裁决的需求</p>
-        ) : (
-          <>
-            <ul className="space-y-2">
-              {actionable.map((r) => (
-                <li key={r.id} className="rounded-lg border border-slate-200 p-2.5">
-                  <div className="flex items-start gap-2">
-                    <input type="checkbox" className="mt-1" checked={selected.includes(r.id)} onChange={() => toggle(r.id)} />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[13px] font-medium text-slate-800">
-                        <span className="mr-1 font-mono text-[11px] font-normal text-slate-400">REQ-{r.seq}</span>
-                        {r.title}
-                      </p>
-                      {r.submitNote && <p className="mt-0.5 truncate text-[11px] text-slate-400">{r.submitNote}</p>}
-                      <p className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
-                        <span className="font-mono">{r.featureBranch ?? `feature/REQ-${r.seq}`}</span>
-                        <TestChips reports={r.reports} />
-                        <StatusChip status={r.status} />
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {r.status === "PENDING_ACCEPT" ? (
-                          <>
-                            <button disabled={busy} onClick={() => single(r, "accept")} className={`${GREEN_BTN} px-2.5 py-1 text-[11px]`}>
-                              验收通过
-                            </button>
-                            <button
-                              disabled={busy}
-                              onClick={() => alert("待验收需求暂不支持直接退回：退回操作用于测试部分通过（待裁决）的需求")}
-                              className={btnCls("danger", "sm")}
-                            >
-                              退回
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button
-                              disabled={busy}
-                              onClick={() => single(r, "approve_partial")}
-                              className={`${AMBER_BTN} px-2.5 py-1 text-[11px]`}
-                            >
-                              放行至待验收
-                            </button>
-                            <button disabled={busy} onClick={() => single(r, "send_back")} className={btnCls("danger", "sm")}>
-                              退回
-                            </button>
-                          </>
-                        )}
-                        <Link href={`/requirements/${r.id}`} className={btnCls("ghost", "sm")}>
-                          查看
-                        </Link>
-                      </div>
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            <label className="mt-2 flex cursor-pointer items-center gap-1.5 text-[11px] text-slate-400">
-              <input type="checkbox" checked={allChecked} onChange={toggleAll} />
-              全选
-            </label>
-          </>
-        )}
-      </div>
-    </Panel>
-  );
-}
-
-// ---------- 页面主体 ----------
-
-const TABS = ["变更摘要", "文件差异", "测试报告", "冲突与风险", "需求映射", "待验收项"];
-
-export function ReviewCenter({ branches: realBranches, demo: demoMode }: { branches: BranchItem[]; demo: boolean }) {
-  // MOCK 回退：库中尚无每日分支时用示例分支填充整页（写操作按展示模式拦截）
-  const isMockFallback = realBranches.length === 0;
-  const branches = isMockFallback ? [MOCK_BRANCH] : realBranches;
-  const demo = demoMode || isMockFallback;
-  const [selectedId, setSelectedId] = useState<string>(
-    () => (branches.find((b) => !b.mergedToMain) ?? branches[0])?.id ?? "",
-  );
-  const [tab, setTab] = useState(0);
-  const [onlyPending, setOnlyPending] = useState(false);
-  const branch = branches.find((b) => b.id === selectedId) ?? branches[0];
-
-  const commitRows = useMemo(() => {
-    if (!branch) return [];
-    const real = branch.requirements
-      .flatMap((r) =>
-        r.commits.map((sha) => ({
-          sha,
-          msg: r.submitNote ?? "—",
-          author: r.agent ?? "—",
-          time: r.submittedAt ? fmtDateTime(r.submittedAt) : "—",
-          reqId: r.id as string | null,
-          req: `REQ-${r.seq} ${r.title}`,
-        })),
-      )
-      .sort((a, b) => b.time.localeCompare(a.time))
-      .slice(0, 10);
-    if (real.length > 0) return real;
-    // MOCK 回退：git 提交明细未接入时展示占位数据
-    return MOCK.commits.map((c) => ({ sha: c.sha, msg: c.msg, author: c.author, time: c.time, reqId: null, req: c.req }));
-  }, [branch]);
-
-  if (!branch) return null;
-
-  const reqs = branch.requirements;
-  const shownReqs = onlyPending ? reqs.filter((r) => r.status === "PENDING_ACCEPT") : reqs;
-  const realCommits = reqs.reduce((s, r) => s + r.commits.length, 0);
-  const commitsTotal = realCommits > 0 ? realCommits : MOCK.commitTotal; // MOCK 回退
-  const pendingAccept = reqs.filter((r) => r.status === "PENDING_ACCEPT").length;
-  const accepted = reqs.filter((r) => r.status === "ACCEPTED").length;
-  const reports = reqs.flatMap((r) => r.reports);
-  const passReports = reports.filter((r) => r.conclusion === "PASS").length;
-  const testsAllPass = reports.length === 0 || passReports === reports.length;
-  const conflicts = reqs.filter((r) => r.conflict).length;
-  const dateLabel = branchDateLabel(branch);
+  const commits = s?.commits ?? [];
+  const shownCommits = allCommits ? commits : commits.slice(0, 20);
 
   return (
     <>
-      {/* 筛选行：日期 + 分支下拉 + 构建徽标（构建数据为 MOCK） */}
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <input
-          type="date"
-          value={dateLabel}
-          onChange={(e) => {
-            const hit = branches.find((b) => branchDateLabel(b) === e.target.value);
-            if (hit) setSelectedId(hit.id);
-          }}
-          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[13px] tabular-nums text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-        />
-        <label className="flex items-center gap-2 text-[13px] text-slate-600">
-          分支：
-          <select
-            value={branch.id}
-            onChange={(e) => setSelectedId(e.target.value)}
-            className="min-w-[220px] rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-          >
-            {branches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.project} · {b.name}
-                {b.mergedToMain ? "（已合并）" : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-        {/* MOCK：CI 构建未接入 */}
-        <span className="inline-flex items-center gap-1.5 rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-[12px] font-medium text-green-700">
-          ✓ 构建 #{MOCK.build.id} 通过
+      <div className="flex flex-wrap items-center gap-2">
+        <select className="ctl w-auto min-w-[260px]" value={d.id} onChange={(e) => router.push(`/branches?branch=${e.target.value}`)}>
+          {options.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.project} · {o.name}
+              {o.mergedToMain ? "（已合并）" : ""}
+            </option>
+          ))}
+        </select>
+        {d.mergedToMain ? <Chip tone="green">已合并 main · {fmtDateTime(d.mergedAt)}</Chip> : <Chip tone="amber">未合并</Chip>}
+        <span className="text-[12px] text-ink-3">
+          {s?.baseCommit ? `基于 main@${s.baseCommit} · ` : ""}
+          创建 {fmtDateTime(d.createdAt)}
+          {s ? ` · diff 刷新于 ${ago(s.refreshedAt)}` : ""}
         </span>
-        <span className="text-[12px] text-slate-300" title="构建数据接入中，当前为占位展示">
-          ⓘ
-        </span>
-        {branch.mergedToMain && <Chip tone="green">✓ 已合并 main</Chip>}
-        {conflicts > 0 && <Chip tone="red">⚠ {conflicts} 个冲突</Chip>}
+        {missingToday.length > 0 && <div className="ml-auto flex flex-wrap gap-2">{missingToday.slice(0, 3).map(createBtn)}</div>}
       </div>
 
-      {/* 第一行：分支概览 + 5 个统计卡 */}
-      <div className="mb-4 grid gap-3 lg:grid-cols-[280px_1fr]">
-        <Panel>
-          <p className="text-[11px] text-slate-400">分支概览</p>
-          <p className="mt-1 font-mono text-[16px] font-semibold text-slate-800">{branch.name}</p>
-          <dl className="mt-3 space-y-1.5 text-[12px] text-slate-500">
-            <div className="flex justify-between gap-2">
-              <dt>创建人</dt>
-              {/* MOCK：创建人未记录，当前由系统定时创建 */}
-              <dd className="text-slate-700">{MOCK.creator}</dd>
-            </div>
-            <div className="flex justify-between gap-2">
-              <dt>创建时间</dt>
-              <dd className="tabular-nums text-slate-700">
-                {branch.createdAt ? fmtDateTime(branch.createdAt) : `${dateLabel} ${MOCK.createdTime}`}
-              </dd>
-            </div>
-            <div className="flex justify-between gap-2">
-              <dt>基于</dt>
-              {/* MOCK：基准 commit hash 未记录 */}
-              <dd className="font-mono text-blue-600">main（{MOCK.baseCommit}）</dd>
-            </div>
-            <div className="flex justify-between gap-2">
-              <dt>目标</dt>
-              <dd className="font-mono text-blue-600">main</dd>
-            </div>
-            <div className="flex justify-between gap-2">
-              <dt>所属项目</dt>
-              <dd className="text-slate-700">{branch.project}</dd>
-            </div>
-          </dl>
-        </Panel>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-          <StatCard
-            label="提交（Commits）"
-            value={commitsTotal}
-            sub={
-              /* MOCK：行级增删统计未接入 */
-              <>
-                <span className="text-green-600">+{MOCK.lineStat.plus}</span> / <span className="text-red-500">-{MOCK.lineStat.minus}</span>
-              </>
-            }
-          />
-          {/* MOCK：文件变更统计未接入 */}
-          <StatCard
-            label="文件变更"
-            value={MOCK.fileChanges.total}
-            sub={`新增 ${MOCK.fileChanges.added} / 修改 ${MOCK.fileChanges.modified} / 删除 ${MOCK.fileChanges.deleted}`}
-          />
-          <StatCard label="需求数量" value={reqs.length} sub={`待验收 ${pendingAccept} / 已验收 ${accepted}`} />
-          <StatCard
-            label="测试报告"
-            value={testsAllPass ? "✓ 通过" : "✗ 未通过"}
-            tone={testsAllPass ? "green" : "red"}
-            sub={
-              reports.length > 0
-                ? `通过 ${passReports}/${reports.length} 份报告`
-                : /* MOCK：必测项统计未接入 */ `必测项 ${MOCK.requiredTests.passed}/${MOCK.requiredTests.total} 通过`
-            }
-          />
-          <StatCard
-            label="冲突状态"
-            value={conflicts === 0 ? "✓ 无冲突" : `${conflicts} 个冲突`}
-            sub={conflicts === 0 ? "可安全合并" : "需先处理冲突"}
-            tone={conflicts === 0 ? "green" : "red"}
-          />
-        </div>
-      </div>
+      {!s && <Notice tone="info">diff 摘要尚未生成。点右上「刷新 diff」，worker 会用 git 计算提交与变更统计。</Notice>}
+      {s?.error && <Notice tone="danger">diff 计算失败：{s.error}</Notice>}
 
-      {/* 主体：左列 Tab + 摘要与提交，右列合并与验收 */}
-      <div className="grid items-start gap-4 xl:grid-cols-[1fr_360px]">
-        <div className="space-y-4">
-          {/* Tab 行：仅「变更摘要」完整实现，其余为占位 */}
-          <div className="flex flex-wrap gap-1 border-b border-slate-200">
-            {TABS.map((t, i) => (
-              <button
-                key={t}
-                onClick={() => setTab(i)}
-                className={`-mb-px border-b-2 px-3 py-2 text-[13px] font-medium transition-colors ${
-                  tab === i ? "border-blue-600 text-blue-600" : "border-transparent text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
+      <KpiRow cols={5}>
+        <KpiTile label="需求" value={d.requirements.length} sub={`${c.merged.length} 已合入 daily`} />
+        <KpiTile label="提交" value={s ? s.totals.commits : "—"} sub={s ? `${c.authors} 位作者` : "待刷新"} />
+        <KpiTile label="变更" value={s ? `${s.totals.files} 文件` : "—"} sub={s ? <span className="num">+{s.totals.insertions} −{s.totals.deletions}</span> : "待刷新"} />
+        <KpiTile label="测试报告" value={`${c.passing.length} / ${c.merged.length}`} sub={c.merged.length === 0 ? "无已合入需求" : allPass ? "全部 PASS" : `缺 ${c.lacking.length} 份`} tone={c.merged.length > 0 && !allPass ? "warn" : "default"} />
+        <KpiTile label="冲突" value={c.conflicts.length} sub={c.conflicts.length ? c.conflicts.map((r) => `REQ-${r.seq}`).join("、") : "无"} tone={c.conflicts.length ? "alert" : "default"} />
+      </KpiRow>
 
-          {tab !== 0 ? (
-            <Panel>
-              <p className="py-14 text-center text-[13px] text-slate-400">「{TABS[tab]}」数据接入中，后续版本提供</p>
-            </Panel>
-          ) : (
-            <>
-              <Panel
-                title="需求分组变更摘要"
-                extra={
-                  <span className="flex items-center gap-2">
-                    <button
-                      onClick={() => alert("批量操作请在右侧「业务验收」卡中勾选需求后执行")}
-                      className={btnCls("secondary", "sm")}
-                    >
-                      批量操作 ▾
-                    </button>
-                    <button
-                      onClick={() => setOnlyPending((v) => !v)}
-                      className={onlyPending ? btnCls("primary", "sm") : btnCls("secondary", "sm")}
-                    >
-                      ⏷ 仅看待验收
-                    </button>
-                  </span>
-                }
-              >
-                {shownReqs.length === 0 ? (
-                  <p className="py-6 text-center text-[13px] text-slate-400">
-                    {onlyPending ? "当前分支没有待验收需求" : "该分支下暂无需求"}
-                  </p>
-                ) : (
-                  <Table head={["需求分组 / 需求", "类型", "feature 分支", "本次变更（提交 / 文件）", "测试结果", "状态", "操作"]}>
-                    {shownReqs.map((r) => {
-                      const t = reqType(r.title); // MOCK：类型按标题推断
-                      const d = mockDiff(r.seq); // MOCK：行级 diff 占位
-                      return (
-                        <tr key={r.id} className="align-top">
-                          <td className="py-2 pr-3">
-                            <p className="text-[13px]">
-                              <span className="mr-1 font-mono text-[11px] text-slate-400">REQ-{r.seq}</span>
-                              <span className="font-medium text-slate-800">{r.title}</span>
-                              {r.conflict && (
-                                <span className="ml-1.5 align-middle">
-                                  <Chip tone="red">⚠ 冲突</Chip>
-                                </span>
-                              )}
-                            </p>
-                            {r.submitNote && (
-                              <p className="mt-0.5 text-[11px] text-slate-400">
-                                {r.agent ? `${r.agent}：` : ""}
-                                {r.submitNote}
-                              </p>
-                            )}
-                          </td>
-                          <td className="py-2 pr-3">
-                            <Chip tone={t.tone}>{t.label}</Chip>
-                          </td>
-                          <td className="py-2 pr-3 font-mono text-[12px] text-slate-500">
-                            {r.featureBranch ?? `feature/REQ-${r.seq}`}
-                          </td>
-                          <td className="py-2 pr-3 text-[12px] tabular-nums text-slate-600">
-                            {r.commits.length > 0 ? r.commits.length : Math.max(1, d.files % 7)} / {d.files}（
-                            <span className="text-green-600">+{d.plus}</span> <span className="text-red-500">-{d.minus}</span>）
-                          </td>
-                          <td className="py-2 pr-3">
-                            <TestChips reports={r.reports} />
-                          </td>
-                          <td className="py-2 pr-3">
-                            <StatusChip status={r.status} />
-                          </td>
-                          <td className="py-2 text-right">
-                            <Link href={`/requirements/${r.id}`} className="text-[12px] text-blue-600 hover:underline">
-                              查看
-                            </Link>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </Table>
-                )}
-                <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3 text-[11px] text-slate-400">
-                  <span>状态说明：</span>
-                  <LegendDot cls="bg-green-500" label="已验收" />
-                  <LegendDot cls="bg-amber-500" label="待验收 / 待裁决" />
-                  <LegendDot cls="bg-teal-500" label="待测试 / 测试中" />
-                  <LegendDot cls="bg-blue-500" label="开发中" />
-                  <LegendDot cls="bg-red-500" label="合并冲突" />
-                </div>
-              </Panel>
-
-              <Panel
-                title="最近提交"
-                extra={
-                  <button
-                    onClick={() => alert("完整提交列表接入中：当前展示开发任务上报的最近提交")}
-                    className="text-[12px] text-blue-600 hover:underline"
-                  >
-                    查看全部提交 ›
-                  </button>
-                }
-              >
-                <Table head={["Commit", "提交信息", "提交人", "提交时间", "关联需求"]}>
-                  {commitRows.map((c) => (
-                    <tr key={c.sha}>
-                      <td className="py-2 pr-3 font-mono text-[12px] text-slate-600">{c.sha.slice(0, 8)}</td>
-                      <td className="py-2 pr-3 text-slate-600">{c.msg}</td>
-                      <td className="py-2 pr-3 text-slate-600">{c.author}</td>
-                      <td className="py-2 pr-3 text-[12px] tabular-nums text-slate-500">{c.time}</td>
-                      <td className="py-2 text-right">
-                        {c.reqId ? (
-                          <Link href={`/requirements/${c.reqId}`} className="text-[12px] text-blue-600 hover:underline">
-                            {c.req}
-                          </Link>
-                        ) : (
-                          <button
-                            onClick={() => alert("该提交为占位数据，需求关联接入中")}
-                            className="text-[12px] text-blue-600 hover:underline"
-                          >
-                            {c.req}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
+        <div className="flex flex-col gap-4">
+          <Panel title="当日分支变更（按需求分组）" pad={false} extra={<span className="text-[12px] text-ink-3">数据来自 git diff main…daily</span>}>
+            <Table head={["编号", "需求", "开发 Agent", "feature 分支", "文件 / 行数", "测试", "状态", ""]}>
+              {d.requirements.map((r) => {
+                const p = c.perReq.get(r.seq);
+                const conflict = r.devStatus === "CONFLICT";
+                const mergedIn = !!p?.mergeSha || r.devStatus === "MERGED";
+                return (
+                  <tr key={r.id} className={conflict ? "bg-danger-soft/40" : ""}>
+                    <td className="font-mono text-[12px] text-ink-3">REQ-{r.seq}</td>
+                    <td className="max-w-[260px]">
+                      <Link href={`/requirements/${r.id}`} className="block truncate font-medium text-ink hover:text-accent">
+                        {r.title}
+                      </Link>
+                      {r.submitNote && <span className="block truncate text-[12px] text-ink-3">{r.submitNote}</span>}
+                    </td>
+                    <td className="font-mono text-[12px] text-ink-2">{r.agent ?? "—"}</td>
+                    <td className="font-mono text-[12px] text-ink-2">{r.featureBranch ?? "—"}</td>
+                    <td className="num font-mono text-[12px] text-ink-2">
+                      {p && mergedIn ? (
+                        <span title={p.changedFiles.slice(0, 20).join("\n")}>
+                          {p.files} / <span className="text-ok">+{p.insertions}</span> <span className="text-danger">−{p.deletions}</span>
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td>
+                      <ReportChip r={r.report} />
+                    </td>
+                    <td>{conflict ? <Chip tone="red">冲突</Chip> : mergedIn ? <StatusChip status={r.status} /> : <Chip tone="slate">未合入</Chip>}</td>
+                    <td className="text-right">
+                      <span className="flex justify-end gap-1">
+                        {conflict && (
+                          <button className={btnCls("ghost", "sm")} onClick={() => setDlg({ kind: "retry", req: r })}>
+                            重试合并
                           </button>
                         )}
-                      </td>
-                    </tr>
-                  ))}
-                </Table>
-              </Panel>
-            </>
-          )}
+                        {(conflict || mergedIn) && !d.mergedToMain && r.status !== "ACCEPTED" && (
+                          <button className={btnCls("ghost", "sm")} onClick={() => setDlg({ kind: "exclude", req: r })}>
+                            剔除
+                          </button>
+                        )}
+                        {r.status === "PENDING_ACCEPT" && !d.mergedToMain && (
+                          <button className={btnCls("ghost", "sm")} onClick={() => setDlg({ kind: "cherry", req: r })}>
+                            单独合入 main
+                          </button>
+                        )}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+              {d.requirements.length === 0 && <EmptyRow colSpan={8}>今天还没有需求认领到这个分支。</EmptyRow>}
+            </Table>
+          </Panel>
+
+          <Panel title={`提交记录（${commits.length}）`} pad={false}>
+            <Table head={["SHA", "提交信息", "作者", "需求", { label: "时间", align: "right" }]} dense>
+              {shownCommits.map((cm) => (
+                <tr key={cm.sha}>
+                  <td className="font-mono text-[12px] text-accent">{cm.sha}</td>
+                  <td className="max-w-[420px] truncate text-ink">{cm.message}</td>
+                  <td className="font-mono text-[12px] text-ink-2">{cm.author}</td>
+                  <td className="font-mono text-[12px] text-ink-2">{cm.reqSeq ? `REQ-${cm.reqSeq}` : "—"}</td>
+                  <td className="num text-right text-[12px] text-ink-3">{fmtDateTime(cm.date)}</td>
+                </tr>
+              ))}
+              {commits.length === 0 && <EmptyRow colSpan={5}>{s ? "该分支相对 main 没有新提交" : "diff 摘要未生成"}</EmptyRow>}
+            </Table>
+            {commits.length > 20 && (
+              <button className="w-full border-t border-line py-2 text-center text-[12px] text-ink-3 hover:text-ink" onClick={() => setAllCommits(!allCommits)}>
+                {allCommits ? "收起" : `展开全部 ${commits.length} 条`}
+              </button>
+            )}
+          </Panel>
         </div>
 
-        <div className="space-y-4">
-          <MergePanel branch={branch} demo={demo} />
-          <AcceptPanel key={branch.id} branch={branch} demo={demo} />
+        <div className="flex flex-col gap-4">
+          <Panel>
+            <div className="flex items-center justify-between">
+              <span className="text-[14px] font-semibold text-ink">合并到 main</span>
+              {d.mergedToMain ? <Chip tone="green">已合并</Chip> : canMerge ? <Chip tone="green">可合并</Chip> : <Chip tone="red">{[!noConflict, !allPass].filter(Boolean).length} 项未满足</Chip>}
+            </div>
+            <ul className="mt-3 flex flex-col gap-2">
+              {[
+                { ok: noConflict, t: "无合并冲突", d: noConflict ? "所有 feature 已合入" : `${c.conflicts.map((r) => `REQ-${r.seq}`).join("、")} 存在冲突` },
+                { ok: allPass, t: "测试报告全部通过", d: c.merged.length === 0 ? "尚无已合入需求" : allPass ? `${c.passing.length} / ${c.merged.length} 份 PASS` : `缺：${c.lacking.map((r) => `REQ-${r.seq}`).join("、")}` },
+                { ok: acceptDone, t: "待验收需求已处理", d: acceptDone ? "无遗留" : `${c.pendingAccept.length} 项待验收${c.reviewing.length ? ` · ${c.reviewing.length} 项待裁决` : ""}（建议先处理）`, soft: true },
+              ].map((it) => (
+                <li key={it.t} className="flex items-start gap-2">
+                  <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full ${it.ok ? "bg-ok-soft text-ok" : it.soft ? "bg-warn-soft text-warn" : "bg-danger-soft text-danger"}`}>
+                    <Icon name={it.ok ? "checkSimple" : "x"} size={10} strokeWidth={2.4} />
+                  </span>
+                  <span className="flex flex-col">
+                    <span className="text-[13px] font-medium text-ink">{it.t}</span>
+                    <span className="text-[12px] text-ink-3">{it.d}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <button className={btnCls("primary", "md", "mt-3 w-full")} disabled={!canMerge || busy === "merge"} onClick={() => setDlg({ kind: "merge" })}>
+              <Icon name="merge" size={14} />
+              {d.mergedToMain ? "已合并 main" : `合并 ${d.name} → main`}
+            </button>
+            {canForce && (
+              <button className={btnCls("ghost", "sm", "mt-1 w-full")} onClick={() => setDlg({ kind: "force" })}>
+                强制合并（跳过报告检查）
+              </button>
+            )}
+            <p className="mt-2 text-[12px] leading-relaxed text-ink-3">合并为 --no-ff，异步执行；完成后本页状态变为「已合并」。</p>
+          </Panel>
+
+          <Panel title={`待验收（${c.pendingAccept.length}）`} pad={false} extra={<Link href="/requirements?status=PENDING_ACCEPT" className="text-[12px] text-accent hover:underline">需求列表</Link>}>
+            {c.pendingAccept.length === 0 ? (
+              <p className="px-4 py-4 text-center text-[12px] text-ink-3">无待验收</p>
+            ) : (
+              <>
+                <ul className="divide-y divide-line">
+                  {c.pendingAccept.map((r) => (
+                    <li key={r.id} className="flex items-center gap-2 px-4 py-2.5">
+                      <input
+                        type="checkbox"
+                        className="chk"
+                        checked={checked.has(r.id)}
+                        onChange={(e) => {
+                          const n = new Set(checked);
+                          if (e.target.checked) n.add(r.id);
+                          else n.delete(r.id);
+                          setChecked(n);
+                        }}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <span className="block font-mono text-[11px] text-ink-3">REQ-{r.seq}</span>
+                        <Link href={`/requirements/${r.id}`} className="block truncate text-[13px] font-medium text-ink hover:text-accent">
+                          {r.title}
+                        </Link>
+                      </div>
+                      <button className={btnCls("primary", "sm")} disabled={busy === `accept-${r.id}`} onClick={() => setDlg({ kind: "accept", req: r })}>
+                        验收
+                      </button>
+                      <button className={btnCls("secondary", "sm")} onClick={() => setDlg({ kind: "sendback", req: r })}>
+                        退回
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex justify-end border-t border-line px-4 py-2.5">
+                  <button className={btnCls("secondary", "sm")} disabled={checked.size === 0} onClick={() => acceptMany([...checked])}>
+                    批量验收所选（{checked.size}）
+                  </button>
+                </div>
+              </>
+            )}
+          </Panel>
+
+          {c.conflicts.length > 0 && (
+            <Panel title="冲突处理">
+              <div className="flex flex-col gap-4">
+                {c.conflicts.map((r) => (
+                  <div key={r.id} className="flex flex-col gap-1.5 text-[13px]">
+                    <span>
+                      <span className="font-mono text-ink-2">REQ-{r.seq}</span> {r.featureBranch} → daily 合并失败
+                    </span>
+                    {r.conflictFiles.length > 0 && <span className="font-mono text-[12px] text-danger">{r.conflictFiles.join(", ")}</span>}
+                    <div className="flex gap-2">
+                      <button className={btnCls("primary", "sm")} onClick={() => setDlg({ kind: "retry", req: r })}>
+                        <Icon name="refresh" size={12} />
+                        重试合并
+                      </button>
+                      <button className={btnCls("secondary", "sm")} onClick={() => setDlg({ kind: "exclude", req: r })}>
+                        剔除本需求
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <p className="text-[12px] leading-relaxed text-ink-3">在本地解决冲突并 push 到 feature 分支后，点击「重试合并」。</p>
+              </div>
+            </Panel>
+          )}
         </div>
       </div>
 
-      {/* 页脚提示条 */}
-      <p className="mt-4 rounded-lg bg-slate-100 px-3 py-2 text-[12px] text-slate-500">
-        提示：1、请先完成所有待验收项的处理；2、仅当右上「分支合并」区域为可用状态时，才可执行合并；3、合并任务异步执行且无法撤销，稍后刷新查看结果。
-      </p>
+      <ConfirmDialog open={dlg?.kind === "merge"} onClose={() => setDlg(null)} title={`合并 ${d.name} 到 main`} desc="合并后无法撤销，请确认所有验收工作已完成。" confirmText="合并到 main" busy={busy === "merge"} onConfirm={() => doMerge(false)} />
+      <ConfirmDialog open={dlg?.kind === "force"} onClose={() => setDlg(null)} title="强制合并" desc={`以下需求没有通过的测试报告：${c.lacking.map((r) => `REQ-${r.seq}`).join("、")}。强制合并将记入审计。`} confirmText="强制合并" danger reason={{ label: "原因", required: true }} busy={busy === "merge"} onConfirm={(reason) => doMerge(true, reason)} />
+      <ConfirmDialog open={dlg?.kind === "retry"} onClose={() => setDlg(null)} title={`重试合并 REQ-${dlg?.req?.seq}`} desc="确认已在本地解决冲突并 push 到 feature 分支。" confirmText="重试" busy={busy === "retry"} onConfirm={async () => { if (guard() || !dlg?.req) return; const r = await run("retry", base(dlg.req.id) + "/retry-merge", { method: "POST", body: {} }, "已重新排队合并"); if (r.ok) setDlg(null); }} />
+      <ConfirmDialog open={dlg?.kind === "exclude"} onClose={() => setDlg(null)} title={`剔除 REQ-${dlg?.req?.seq}`} desc="revert 该需求在 daily 上的合并提交，需求回到待开发池（feature 分支保留）。" confirmText="剔除" danger busy={busy === "exclude"} onConfirm={async () => { if (guard() || !dlg?.req) return; const r = await run("exclude", base(dlg.req.id) + "/exclude", { method: "POST", body: {} }, "已排队剔除"); if (r.ok) setDlg(null); }} />
+      <ConfirmDialog open={dlg?.kind === "cherry"} onClose={() => setDlg(null)} title={`单独合入 main：REQ-${dlg?.req?.seq}`} desc="不等晚间合并，把该需求的合并提交 cherry-pick 到 main。" confirmText="合入 main" busy={busy === "cherry"} onConfirm={async () => { if (guard() || !dlg?.req) return; const r = await run("cherry", base(dlg.req.id) + "/cherry-pick", { method: "POST", body: {} }, "已排队合入 main"); if (r.ok) setDlg(null); }} />
+      <ConfirmDialog open={dlg?.kind === "accept"} onClose={() => setDlg(null)} title={`验收 REQ-${dlg?.req?.seq}`} desc={dlg?.req?.title} confirmText="验收通过" busy={busy === `accept-${dlg?.req?.id}`} onConfirm={async () => { if (guard() || !dlg?.req) return; const r = await run(`accept-${dlg.req.id}`, base(dlg.req.id) + "/accept", { method: "POST", body: { action: "accept" } }, "验收通过"); if (r.ok) setDlg(null); }} />
+      <ConfirmDialog open={dlg?.kind === "sendback"} onClose={() => setDlg(null)} title={`退回 REQ-${dlg?.req?.seq}`} desc="需求回到待开发池重新认领开发。" confirmText="退回" danger reason={{ label: "退回原因", required: true }} busy={busy === "sendback"} onConfirm={async (note) => { if (guard() || !dlg?.req) return; const r = await run("sendback", base(dlg.req.id) + "/accept", { method: "POST", body: { action: "send_back", note } }, "已退回待开发"); if (r.ok) setDlg(null); }} />
     </>
   );
 }

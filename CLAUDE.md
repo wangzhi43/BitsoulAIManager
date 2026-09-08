@@ -4,7 +4,7 @@ BitSoul AI Manager — 基于大模型的多 Agent 自动化项目管理平台�
 
 ## 项目状态
 
-当前处于 **方案设计阶段**，尚未开始编码。所有开发必须在 PRD 与技术方案（见 docs/）经管理员审核通过后按优先级进行。
+MVP（M1-M6）与 P1 批次已上线 https://pm.bitsouls.cn，2026-09 完成商务风 UI 重设计与功能补齐（docs/UI_REDESIGN.md）。需求变更仍以 docs/PRD.md 为准；界面改动遵循 docs/UI_REDESIGN.md §1 的设计系统（单主色、无 emoji、真实模式不用假数据）。
 
 ## 目录约定
 
@@ -39,9 +39,11 @@ BitSoul AI Manager — 基于大模型的多 Agent 自动化项目管理平台�
 
 - 语言：界面与文档中文，代码/命令/变量/commit message 英文
 - 分支模型：`main` ← `daily/YYYYMMDD` ← `feature/REQ-<id>`（详见 TECH_DESIGN）
-- 验证命令（开发启动后生效）：
-  - `npm run lint && npm run typecheck` — 每次改动后必跑
-  - `npm test` — 涉及业务逻辑必跑
+- 验证命令：
+  - `npx tsc --noEmit && npm run build` — 每次改动后必跑（`next lint` 已随 Next 16 移除）
+  - `npm run seed:dev`（本地样例数据，拒绝在生产运行）→ `npm run smoke`（接口冒烟）— 涉及业务逻辑必跑
+  - 界面改动用 Playwright 全页截图目检（桌面 1440 / 手机 390，真实模式 + 展示模式）
+  - 本地脚本需先 `set -a && source .env && set +a` 注入环境变量
 - 密钥一律走环境变量或平台加密配置表，禁止入库明文、入 commit、入日志
 - 大模型调用一律经过 `src/lib/llm/` 的 provider 抽象层，禁止在业务代码中直连 SDK
 

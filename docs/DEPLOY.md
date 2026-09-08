@@ -55,10 +55,13 @@ server {
 
 ## 4. 平台内配置（登录后「设置」页）
 
-1. 添加 LLM 供应商（Anthropic key 或 DeepSeek/Qwen 的 OpenAI 兼容端点），点「测试」验证连通
-2. 为 PRODUCT / PM / TEST 三个专家角色各选定供应商与模型
-3. 启用三个项目（确认各自 GitHub 仓库地址；仓库需已存在且 PAT 可访问）
-4. 在「更多 → Agent」创建开发/测试 Agent 账号
+1. 「LLM 供应商」页签：添加供应商（DeepSeek / Anthropic / 通义千问 可一键预填），点「测试」验证连通
+2. 「专家模型」页签：为产品 / 项管 / 测试专家各选定供应商与模型
+3. 「项目」页签：启用项目（仓库需已存在且 PAT 可访问）；可在同页维护 docs/agent-context.md
+4. 「智能体」页：创建开发 / 测试 Agent 账号，凭据只显示一次
+5. 「系统参数」页签：聚合窗口、认领超时、日消耗上限、定时任务时间；需要客户自助提交时开放「Web 表单入口」
+
+本地验证：`npm run seed:dev` 灌样例数据 → `npm run smoke` 跑接口冒烟（详见 CLAUDE.md 验证命令）。
 
 ## 5. 微信桥接（在跑 OpenClaw 微信机器人的机器上）
 

@@ -68,6 +68,30 @@ export const DEMO_STATS = {
   agentActive: 4,
   quality: { avgLeadHours: 26.4, avgDevHours: 9.8, reworkRate: 12, samples: 17 },
   usageAlert: null,
+  // 2026-09 工作台新字段（与 stats.ts DashboardStats 对齐）
+  todo: { pendingConfirm: 4, reviewing: 1, pendingAccept: 3, conflicts: 1, pendingConfirmSources: { wechat: 3, manual: 1, web: 0 } },
+  deltas: { pendingConfirm: 2, inProgress: 1, acceptedToday: 1 },
+  projectRows: [
+    { id: "demo-p1", name: "BitSoulClaw", active: true, pendingConfirm: 3, ready: 2, developing: 2, testing: 1, pendingAccept: 2, conflicts: 1, todayBranch: { id: "demo-b1", name: `daily/${new Date().toISOString().slice(0, 10).replace(/-/g, "")}`, mergedToMain: false } },
+    { id: "demo-p2", name: "bitsoulofficial", active: true, pendingConfirm: 1, ready: 1, developing: 1, testing: 0, pendingAccept: 0, conflicts: 0, todayBranch: { id: "demo-b2", name: `daily/${new Date().toISOString().slice(0, 10).replace(/-/g, "")}`, mergedToMain: true } },
+    { id: "demo-p3", name: "minsheng-worklog-mp", active: true, pendingConfirm: 0, ready: 2, developing: 0, testing: 1, pendingAccept: 1, conflicts: 0, todayBranch: null },
+  ],
+  agentsOnline: [
+    { username: "dev-agent-1", role: "DEVELOPER", current: "开发中 REQ-96", lastSeenAt: hoursAgo(0.05), active: true },
+    { username: "test-agent-1", role: "TESTER", current: "测试中 REQ-95", lastSeenAt: hoursAgo(0.1), active: true },
+    { username: "dev-agent-2", role: "DEVELOPER", current: null, lastSeenAt: hoursAgo(1.5), active: false },
+    { username: "claw-both-1", role: "BOTH", current: null, lastSeenAt: daysAgo(3), active: false },
+  ],
+  llmCost7d: 3.42,
+  llmTodayTokens: 189000,
+  llmLimit: 500000,
+  system: {
+    botLastSeen: hoursAgo(0.01).toISOString(),
+    botAlert: false,
+    queue: { llm: 0, git: 1, failed: 0 },
+    latestReport: { project: "BitSoulClaw", date: now().toISOString().slice(0, 10), createdAt: hoursAgo(2), pushed: true },
+    usageAlert: null,
+  },
 };
 
 export const DEMO_REQ_LIST = [

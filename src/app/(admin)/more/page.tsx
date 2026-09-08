@@ -1,45 +1,64 @@
 import Link from "next/link";
 import { isDemoMode } from "@/lib/demo";
+import { currentAdmin } from "@/lib/auth";
 import { DemoToggle } from "@/components/DemoControls";
 import { ChangePasswordForm } from "./ui";
-import { PageShell, PageHeader, btnCls } from "@/components/ui";
+import { PageShell, PageHeader, Panel, btnCls } from "@/components/ui";
+import { Icon, type IconName } from "@/components/icons";
 
 export const dynamic = "force-dynamic";
 
+// 「更多」：手机端次级入口 + 账号操作 + 展示模式开关（桌面端从侧栏用户区进入）
+
 export default async function MorePage() {
   const demo = await isDemoMode();
-  const links = [
-    { href: "/requirements", label: "需求列表", desc: "全部需求的状态筛选、详情与验收操作", icon: "≔" },
-    { href: "/inbox", label: "采集箱与手动导入", desc: "微信消息聚合状态、粘贴/上传导入需求", icon: "⇩" },
-    { href: "/agents", label: "智能体管理", desc: "各 Agent 当前任务、账号创建与启停", icon: "🤖" },
-    { href: "/reports", label: "数据与报表", desc: "按项目的每日进度报告与产出统计", icon: "📋" },
-    { href: "/settings", label: "系统设置", desc: "项目、LLM 供应商、专家模型、微信采集", icon: "⚙" },
+  const admin = await currentAdmin();
+  const links: { href: string; label: string; desc: string; icon: IconName }[] = [
+    { href: "/requirements", label: "需求列表", desc: "全部需求的状态筛选与详情", icon: "list" },
+    { href: "/inbox", label: "采集箱", desc: "微信消息聚合状态、手动导入", icon: "inbox" },
+    { href: "/agents", label: "智能体", desc: "Agent 账号、当前任务与产出", icon: "bot" },
+    { href: "/reports", label: "日报", desc: "各项目每日进度报告", icon: "chart" },
+    { href: "/settings", label: "设置", desc: "项目、LLM、微信、系统参数", icon: "settings" },
+    { href: "https://github.com/wangzhi43/BitsoulAIManager/blob/main/docs/api/AGENT_GUIDE.md", label: "终端接入指引", desc: "给 Claude Code 等终端的接入说明", icon: "file" },
   ];
   return (
     <PageShell>
-      <PageHeader title="更多" subtitle="功能入口、演示模式与账号操作" />
-      <div className="mx-auto max-w-5xl space-y-4">
+      <PageHeader title="更多" subtitle="功能入口 · 账号 · 展示模式" />
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
+        <Panel pad={false}>
+          <ul className="divide-y divide-line">
+            {links.map((l) => (
+              <li key={l.href}>
+                <Link href={l.href} className="flex items-center gap-3 px-4 py-3 hover:bg-surface-2">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-md bg-bg text-ink-2">
+                    <Icon name={l.icon} size={16} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <p className="text-[13px] font-medium text-ink">{l.label}</p>
+                    <p className="truncate text-[12px] text-ink-3">{l.desc}</p>
+                  </span>
+                  <Icon name="chevronRight" size={14} className="text-ink-3" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+
+        <Panel title="账号">
+          <div className="mb-3 flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-sidebar text-[13px] font-semibold text-white">{(admin?.displayName ?? "管").slice(0, 1)}</span>
+            <div className="leading-tight">
+              <p className="text-[13px] font-medium text-ink">{admin?.displayName}</p>
+              <p className="font-mono text-[12px] text-ink-3">{admin?.username}</p>
+            </div>
+          </div>
+          <ChangePasswordForm />
+        </Panel>
+
         <DemoToggle on={demo} />
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {links.map((l) => (
-            <Link
-              key={l.href}
-              href={l.href}
-              className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors hover:border-blue-200 hover:bg-blue-50/30"
-            >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-lg text-blue-600">
-                {l.icon}
-              </span>
-              <span className="min-w-0">
-                <p className="text-[13px] font-semibold text-slate-800">{l.label}</p>
-                <p className="mt-0.5 truncate text-[12px] text-slate-400">{l.desc}</p>
-              </span>
-            </Link>
-          ))}
-        </div>
-        <ChangePasswordForm />
-        <form action="/api/admin/logout" method="post" className="pt-1">
-          <button className={`${btnCls("secondary", "md")} w-full`}>退出登录</button>
+
+        <form action="/api/admin/logout" method="post">
+          <button className={btnCls("secondary", "md", "w-full")}>退出登录</button>
         </form>
       </div>
     </PageShell>

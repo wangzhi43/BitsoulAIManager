@@ -4,6 +4,7 @@ import { apiError, apiOk } from "@/lib/api";
 import { authenticateAgent } from "@/lib/auth";
 import { getQueues } from "@/lib/queue";
 import { config } from "@/lib/config";
+import { getRuntimeNumber } from "@/lib/runtime-config";
 
 export const dynamic = "force-dynamic";
 
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         ? { kind: "github_pat", token: config.githubBotPat }
         : { kind: "none", token: null },
       heartbeatEveryMinutes: 10,
-      claimTimeoutHours: config.claimTimeoutHours,
+      claimTimeoutHours: await getRuntimeNumber("claimTimeoutHours"),
     });
   }
 
@@ -80,8 +81,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     if (!testTask.requirement.projectId || !agent.projectIds.includes(testTask.requirement.projectId)) {
       return apiError("forbidden", "project not accessible");
     }
-    // 开发与测试互斥（PRD §3.6）
-    if (testTask.requirement.devTask?.claimedById === agent.id) {
+    // 开发与测试互斥（PRD §3.6，系统参数 devTestExclusive 可关）
+    const exclusive = (await getRuntimeNumber("devTestExclusive")) !== 0;
+    if (exclusive && testTask.requirement.devTask?.claimedById === agent.id) {
       return apiError("conflict", "developer of this requirement cannot test it");
     }
     const updated = await prisma.testTask.updateMany({
@@ -116,6 +118,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         : null,
       cases: testTask.cases,
       heartbeatEveryMinutes: 10,
+      claimTimeoutHours: await getRuntimeNumber("claimTimeoutHours"),
     });
   }
 

@@ -1,21 +1,66 @@
 @import "tailwindcss";
 
-/* 参考图为浅色主题 + 深色侧边栏：dark: 变体改挂 .dark 类（全站不启用），锁定浅色 */
+/* 设计系统（docs/UI_REDESIGN.md §1）：企业中后台，单一主色，系统字体，1px 边框，无阴影/渐变。
+   dark: 变体挂 .dark 类（全站不启用），锁定浅色。 */
 @custom-variant dark (&:where(.dark, .dark *));
 
+@theme {
+  --color-bg: #f4f5f7;
+  --color-surface: #ffffff;
+  --color-surface-2: #fafbfc;
+  --color-line: #e3e6eb;
+  --color-line-strong: #cfd5de;
+  --color-ink: #16202e;
+  --color-ink-2: #4b5563;
+  --color-ink-3: #8b94a5;
+  --color-accent: #1f4fa8;
+  --color-accent-hover: #193f88;
+  --color-accent-soft: #e9eff9;
+  --color-accent-line: #4f7ad1;
+  --color-ok: #1a7f4b;
+  --color-ok-soft: #e6f4ec;
+  --color-warn: #b7791f;
+  --color-warn-soft: #fbf1dc;
+  --color-warn-line: #efd9a8;
+  --color-danger: #c0392b;
+  --color-danger-soft: #fbe9e7;
+  --color-danger-line: #efc4be;
+  --color-info: #2b6cb0;
+  --color-info-soft: #e8f0fa;
+  --color-sidebar: #131c2b;
+  --color-sidebar-text: #aeb7c6;
+  --color-sidebar-muted: #6b7686;
+  --color-sidebar-active: #1f2a3d;
+  --color-sidebar-line: #243046;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
 :root {
-  --background: #f2f4f8;
-  --foreground: #1a2233;
-  --sidebar: #0b1526;
-  --primary: #2563eb;
+  --background: #f4f5f7;
+  --foreground: #16202e;
+}
+
+html {
+  font-size: 13px;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* 细滚动条，贴近参考图的轻量观感 */
+/* 数字一律等宽（设计规则 2） */
+.num,
+table td,
+table th {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 细滚动条 */
 *::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -26,4 +71,50 @@ body {
 }
 *::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* 表单控件统一外观（放在 components 层，保证 Tailwind 工具类可覆盖宽高） */
+@layer components {
+  .ctl {
+    height: 32px;
+    border: 1px solid var(--color-line-strong);
+    border-radius: 6px;
+    padding: 0 10px;
+    font-size: 13px;
+    background: #fff;
+    color: var(--color-ink);
+    outline: none;
+    width: 100%;
+  }
+  .ctl:focus {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 2px var(--color-accent-soft);
+  }
+  .ctl::placeholder {
+    color: var(--color-ink-3);
+  }
+  textarea.ctl {
+    height: auto;
+    padding: 8px 10px;
+    line-height: 1.5;
+    resize: vertical;
+  }
+  select.ctl {
+    appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b94a5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    padding-right: 26px;
+  }
+  .ctl-sm {
+    height: 28px;
+    font-size: 12px;
+  }
+  input[type="checkbox"].chk {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--color-accent);
+    border-radius: 3px;
+  }
+
 }

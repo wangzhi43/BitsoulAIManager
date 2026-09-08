@@ -6,10 +6,12 @@ import { AutoRefresh } from "@/components/AutoRefresh";
 import { BottomNav } from "@/components/BottomNav";
 import { Sidebar } from "@/components/Sidebar";
 import { DemoBanner } from "@/components/DemoControls";
+import { ToastProvider } from "@/components/ui-client";
 
 export const dynamic = "force-dynamic";
 
-// 管理端外壳：桌面深色侧边栏（带待办徽标）+ 移动端底部导航
+// 管理端外壳：桌面藏青侧栏（分组导航 + 徽标）+ 手机底部导航 + Toast + SSE 刷新
+
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const admin = await currentAdmin();
   if (!admin) redirect("/login");
@@ -27,16 +29,16 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   }
 
   return (
-    <div className={`min-h-dvh ${demo ? "pt-8" : ""}`}>
-      <AutoRefresh />
-      {demo && <DemoBanner />}
-      <div className="flex">
-        <Sidebar adminName={admin.displayName ?? "管理员"} badges={badges} />
-        <div className="min-w-0 flex-1 pb-20 lg:pb-0">{children}</div>
+    <ToastProvider>
+      <div className={`min-h-dvh ${demo ? "pt-8" : ""}`}>
+        <AutoRefresh />
+        {demo && <DemoBanner />}
+        <div className="flex">
+          <Sidebar adminName={admin.displayName ?? "管理员"} username={admin.username} badges={badges} />
+          <div className="min-w-0 flex-1 pb-20 lg:pb-0">{children}</div>
+        </div>
+        <BottomNav confirmCount={badges.confirm} />
       </div>
-      <div className="lg:hidden">
-        <BottomNav />
-      </div>
-    </div>
+    </ToastProvider>
   );
 }

@@ -2,83 +2,38 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Icon, type IconName } from "./icons";
 
-const TABS = [
-  {
-    href: "/dashboard",
-    label: "看板",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
-        <rect x="3" y="3" width="7.5" height="9" rx="1.5" />
-        <rect x="13.5" y="3" width="7.5" height="5.5" rx="1.5" />
-        <rect x="13.5" y="12" width="7.5" height="9" rx="1.5" />
-        <rect x="3" y="15.5" width="7.5" height="5.5" rx="1.5" />
-      </svg>
-    ),
-  },
-  {
-    href: "/confirm",
-    label: "确认",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
-        <path d="M9 12l2 2 4-4" />
-        <circle cx="12" cy="12" r="9" />
-      </svg>
-    ),
-  },
-  {
-    href: "/pools",
-    label: "任务池",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
-        <path d="M4 6h16M4 12h16M4 18h10" />
-      </svg>
-    ),
-  },
-  {
-    href: "/branches",
-    label: "分支",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
-        <circle cx="6" cy="6" r="2.5" />
-        <circle cx="6" cy="18" r="2.5" />
-        <circle cx="18" cy="9" r="2.5" />
-        <path d="M6 8.5v7M18 11.5c0 4-5 3.5-9 4.5" />
-      </svg>
-    ),
-  },
-  {
-    href: "/more",
-    label: "更多",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
-        <circle cx="5" cy="12" r="1.8" />
-        <circle cx="12" cy="12" r="1.8" />
-        <circle cx="19" cy="12" r="1.8" />
-      </svg>
-    ),
-  },
+// 手机端底部导航：5 个入口（设计规则 6）
+
+const TABS: { href: string; label: string; icon: IconName; group?: string[] }[] = [
+  { href: "/dashboard", label: "工作台", icon: "grid" },
+  { href: "/confirm", label: "待确认", icon: "check" },
+  { href: "/pools", label: "看板", icon: "kanban" },
+  { href: "/branches", label: "审查", icon: "branch" },
+  { href: "/more", label: "更多", icon: "more", group: ["/inbox", "/requirements", "/agents", "/reports", "/settings"] },
 ];
 
-export function BottomNav() {
+export function BottomNav({ confirmCount = 0 }: { confirmCount?: number }) {
   const pathname = usePathname();
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md">
-      <div className="mx-auto flex max-w-3xl">
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden">
+      <div className="flex">
         {TABS.map((t) => {
-          const active = pathname === t.href || (t.href === "/more" && ["/inbox", "/agents", "/reports", "/settings"].includes(pathname));
+          const active = pathname === t.href || pathname.startsWith(t.href + "/") || (t.group?.some((g) => pathname.startsWith(g)) ?? false);
           return (
             <Link
               key={t.href}
               href={t.href}
-              className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] transition-colors ${
-                active
-                  ? "font-medium text-blue-600"
-                  : "text-slate-400 hover:text-slate-600"
-              }`}
+              className={`relative flex min-h-[56px] flex-1 flex-col items-center justify-center gap-0.5 text-[10px] ${active ? "font-medium text-accent" : "text-ink-3"}`}
             >
-              {t.icon}
+              <Icon name={t.icon} size={20} />
               {t.label}
+              {t.href === "/confirm" && confirmCount > 0 && (
+                <span className="num absolute right-[calc(50%-20px)] top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-medium text-white">
+                  {confirmCount > 99 ? "99+" : confirmCount}
+                </span>
+              )}
             </Link>
           );
         })}

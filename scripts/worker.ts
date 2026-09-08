@@ -1,46 +1,99 @@
 // BullMQ worker 进程：消费 llm / git / cron 三个队列，注册定时任务。
 // 运行：npm run worker（生产：docker compose 中独立容器）
 
-import { Worker, Queue } from "bullmq";
-import { createRedis, type LlmJob, type GitJob } from "../src/lib/queue";
+import { Worker } from "bullmq";
+import { createRedis, getQueues, CRON_NAMES, type LlmJob, type GitJob, type CronName } from "../src/lib/queue";
 import { logger } from "../src/lib/logger";
 import { prisma } from "../src/lib/db";
+import { audit } from "../src/lib/audit";
+import {
+  CRON_KEYS,
+  claimTimeoutMs,
+  getCronPattern,
+  getRuntimeNumber,
+  invalidateRuntimeConfig,
+  type CronKey,
+} from "../src/lib/runtime-config";
 import { parseThread } from "../src/lib/experts/product";
 import { aggregateThreads } from "../src/lib/experts/aggregate";
 import { rankPool } from "../src/lib/experts/pm";
 import { genTestTasks } from "../src/lib/experts/test";
 import { generateDailyReport } from "../src/lib/experts/report";
+import { applyClarification } from "../src/lib/experts/clarify";
 import {
   createDailyBranch,
   createFeatureBranch,
   mergeFeatureToDaily,
   mergeDailyToMain,
   commitFileToBranch,
+  buildBranchSummary,
+  excludeFromDaily,
+  cherryPickToMain,
+  fetchRepo,
 } from "../src/lib/git";
-import { getQueues } from "../src/lib/queue";
 
 const connection = createRedis();
 
 // ---------- 定时任务注册（TECH_DESIGN §8） ----------
+// 四个可配项（cronDailyBranch / cronRankPools / cronDailyReport / cronUsageRollup）读 SystemConfig；
+// 其余固定。reload-cron 每 5 分钟使缓存失效并重新 upsert（同 id + 新 pattern 即替换）。
 
-const CRON_JOBS: { name: string; pattern: string }[] = [
-  { name: "create-daily-branches", pattern: "0 2 * * *" }, // 每日 02:00 建 daily 分支
-  { name: "rank-pools", pattern: "0 3 * * *" }, // 每日 03:00 全池重排
-  { name: "daily-reports", pattern: "0 21 * * *" }, // 每日 21:00 日报
-  { name: "claim-timeout-scan", pattern: "*/10 * * * *" }, // 每 10 分钟超时扫描
-  { name: "aggregate-threads", pattern: "* * * * *" }, // 每分钟：消息聚合成需求线索
-  { name: "usage-rollup", pattern: "0 4 * * *" }, // 每日 04:00 用量汇总
-];
+const FIXED_CRON: Partial<Record<CronName, string>> = {
+  "claim-timeout-scan": "*/10 * * * *", // 每 10 分钟超时扫描
+  "aggregate-threads": "* * * * *", // 每分钟：消息聚合成需求线索
+  "fetch-repos": "*/5 * * * *", // 每 5 分钟仓库增量 fetch
+  "bot-heartbeat-check": "*/5 * * * *", // 每 5 分钟 Bot 心跳检查
+  "reload-cron": "*/5 * * * *", // 每 5 分钟重载 cron 配置
+};
 
-async function registerCronJobs() {
-  const cron = new Queue("cron", { connection: createRedis() });
-  for (const job of CRON_JOBS) {
-    await cron.upsertJobScheduler(job.name, { pattern: job.pattern, tz: "Asia/Shanghai" });
-  }
-  logger.info({ jobs: CRON_JOBS.map((j) => j.name) }, "cron jobs registered");
+async function resolveCronPattern(name: CronName): Promise<string> {
+  const key = (Object.keys(CRON_KEYS) as CronKey[]).find((k) => CRON_KEYS[k].job === name);
+  if (key) return getCronPattern(key);
+  const fixed = FIXED_CRON[name];
+  if (!fixed) throw new Error(`no cron pattern defined for ${name}`);
+  return fixed;
 }
 
-// ---------- 处理器（M2-M4 逐步填充实现） ----------
+const registeredPatterns = new Map<CronName, string>();
+
+/** upsert 全部调度器；pattern 未变化的跳过（首次启动全部注册） */
+async function registerCronJobs(): Promise<void> {
+  const cron = getQueues().cron;
+  const changed: string[] = [];
+  for (const name of CRON_NAMES) {
+    const pattern = await resolveCronPattern(name);
+    if (registeredPatterns.get(name) === pattern) continue;
+    await cron.upsertJobScheduler(name, { pattern, tz: "Asia/Shanghai" }, { name });
+    registeredPatterns.set(name, pattern);
+    changed.push(`${name}=${pattern}`);
+  }
+  if (changed.length) logger.info({ changed }, "cron schedulers upserted");
+}
+
+// ---------- 通用入队 ----------
+
+/** 刷新分支摘要：同一 daily 去重（等待中的不重复加；执行中的结束后再补一次） */
+async function enqueueRefreshSummary(dailyBranchId: string | null | undefined): Promise<void> {
+  if (!dailyBranchId) return;
+  await getQueues().git.add(
+    "refresh-branch-summary",
+    { kind: "refresh-branch-summary", dailyBranchId },
+    { deduplication: { id: `refresh-branch-summary:${dailyBranchId}`, keepLastIfActive: true }, removeOnComplete: true, removeOnFail: 50 },
+  );
+}
+
+/** 向项目负责人会话（pushDailyReport=true 且未暂停）投递微信消息 */
+async function notifyProjectOwners(projectId: string, text: string): Promise<number> {
+  const receivers = await prisma.wechatBinding.findMany({
+    where: { projectId, pushDailyReport: true, paused: false },
+  });
+  for (const b of receivers) {
+    await prisma.wechatOutbox.create({ data: { convId: b.convId, content: text } });
+  }
+  return receivers.length;
+}
+
+// ---------- 处理器 ----------
 
 const llmWorker = new Worker<LlmJob>(
   "llm",
@@ -64,10 +117,7 @@ const llmWorker = new Worker<LlmJob>(
         const rep = await prisma.dailyReport.findUnique({
           where: { projectId_date: { projectId: job.data.projectId, date: dayStart } },
         });
-        const receivers = await prisma.wechatBinding.findMany({
-          where: { projectId: job.data.projectId, pushDailyReport: true, paused: false },
-        });
-        if (proj && rep && receivers.length > 0) {
+        if (proj && rep) {
           const c = rep.content as { done: string[]; inProgress: string[]; blocked: string[]; forecast: string; risks: string[] };
           const text = [
             `【${proj.name}】${dayStart.toISOString().slice(0, 10)} 进度日报`,
@@ -80,14 +130,18 @@ ${c.blocked.map((x) => `· ${x}`).join("\n")}` : "",
             `📅 明日预测：${c.forecast}`,
             c.risks.length ? `❗ 风险：${c.risks.join("；")}` : "",
           ].filter(Boolean).join("\n\n");
-          for (const b of receivers) {
-            await prisma.wechatOutbox.create({ data: { convId: b.convId, content: text } });
+          const n = await notifyProjectOwners(proj.id, text);
+          if (n > 0) {
+            await prisma.dailyReport.update({ where: { id: rep.id }, data: { pushed: true } });
+            logger.info({ project: proj.name, receivers: n }, "daily report queued to wechat");
           }
-          await prisma.dailyReport.update({ where: { id: rep.id }, data: { pushed: true } });
-          logger.info({ project: proj.name, receivers: receivers.length }, "daily report queued to wechat");
         }
         return;
       }
+      case "apply-clarification":
+        // 微信客户答复澄清问题 → 回填需求单；判定为新需求时模块内部回落 parse-thread
+        await applyClarification(job.data.threadId);
+        return;
     }
   },
   { connection, concurrency: 3 },
@@ -99,9 +153,13 @@ const gitWorker = new Worker<GitJob>(
     logger.info({ id: job.id, data: job.data }, "git job received");
     // concurrency=1 全局串行，天然满足同项目串行要求
     switch (job.data.kind) {
-      case "create-daily-branch":
-        await createDailyBranch(job.data.projectId, new Date(job.data.date));
+      case "create-daily-branch": {
+        const { projectId } = job.data;
+        const name = await createDailyBranch(projectId, new Date(job.data.date));
+        const daily = await prisma.dailyBranch.findUnique({ where: { projectId_name: { projectId, name } } });
+        await enqueueRefreshSummary(daily?.id); // 让审查页立刻有 baseCommit
         return;
+      }
       case "create-feature-branch":
         await createFeatureBranch(job.data.requirementId);
         return;
@@ -141,7 +199,9 @@ const gitWorker = new Worker<GitJob>(
               content: entry,
             });
           }
+          await enqueueRefreshSummary(reqFull.dailyBranchId);
         } else {
+          const files = result.conflictFiles ?? [];
           await prisma.$transaction([
             prisma.devTask.update({ where: { requirementId }, data: { status: "CONFLICT" } }),
             prisma.reqEvent.create({
@@ -150,16 +210,132 @@ const gitWorker = new Worker<GitJob>(
                 fromStatus: "DEVELOPING",
                 toStatus: "DEVELOPING",
                 actor: "system",
-                note: `合并冲突，需人工处理：${(result.conflictFiles ?? []).join(", ").slice(0, 300)}`,
+                note: `合并冲突，需人工处理：${files.join(", ").slice(0, 300)}`,
               },
             }),
           ]);
+          // 冲突告警推送到负责人会话（PRD #24）
+          const reqC = await prisma.requirement.findUniqueOrThrow({
+            where: { id: requirementId },
+            include: { project: true },
+          });
+          if (reqC.project) {
+            const shown = files.slice(0, 8).join("、") + (files.length > 8 ? ` 等 ${files.length} 个文件` : "");
+            const n = await notifyProjectOwners(
+              reqC.project.id,
+              `【${reqC.project.name}】REQ-${reqC.seq} ${reqC.title} 合并冲突：${shown || "（无冲突文件列表）"}，请管理员到分支审查页处理`,
+            );
+            logger.warn({ req: reqC.seq, receivers: n }, "merge conflict notified");
+          }
         }
         return;
       }
-      case "merge-daily-to-main":
-        await mergeDailyToMain(job.data.dailyBranchId);
+      case "merge-daily-to-main": {
+        const { dailyBranchId } = job.data;
+        const result = await mergeDailyToMain(dailyBranchId);
+        if (!result.ok) {
+          const daily = await prisma.dailyBranch.findUnique({ where: { id: dailyBranchId } });
+          await audit(
+            "system",
+            "merge-daily-to-main-conflict",
+            daily?.name ?? dailyBranchId,
+            `冲突文件：${(result.conflictFiles ?? []).join(", ").slice(0, 400)}`,
+          );
+        }
+        await enqueueRefreshSummary(dailyBranchId);
         return;
+      }
+      case "refresh-branch-summary":
+        await buildBranchSummary(job.data.dailyBranchId);
+        return;
+      case "exclude-from-daily": {
+        const { requirementId } = job.data;
+        const req = await prisma.requirement.findUniqueOrThrow({
+          where: { id: requirementId },
+          include: { devTask: true },
+        });
+        let result;
+        try {
+          result = await excludeFromDaily(requirementId);
+        } catch (e) {
+          const msg = String(e instanceof Error ? e.message : e).slice(0, 300);
+          await prisma.reqEvent.create({
+            data: { requirementId, fromStatus: req.status, toStatus: req.status, actor: "system", note: `剔除失败：${msg}` },
+          });
+          throw e;
+        }
+        if (result.ok) {
+          const note = result.revertSha
+            ? `已从当日分支剔除（revert ${result.revertSha}），回待开发池`
+            : "当日分支上无该需求的合并提交，无需 revert；回待开发池";
+          await prisma.$transaction(async (tx) => {
+            await tx.requirement.update({ where: { id: requirementId }, data: { status: "READY" } });
+            if (req.devTask) {
+              await tx.devTask.update({
+                where: { requirementId },
+                data: { status: "POOL", claimedById: null, claimedAt: null, lastHeartbeat: null, submittedAt: null },
+              });
+            }
+            await tx.testTask.updateMany({
+              where: { requirementId, status: { in: ["POOL", "CLAIMED"] } },
+              data: { status: "DONE", claimedById: null },
+            });
+            await tx.reqEvent.create({
+              data: { requirementId, fromStatus: req.status, toStatus: "READY", actor: "system", note },
+            });
+          });
+        } else {
+          await prisma.reqEvent.create({
+            data: {
+              requirementId,
+              fromStatus: req.status,
+              toStatus: req.status,
+              actor: "system",
+              note: `剔除失败，revert 冲突需人工处理：${(result.conflictFiles ?? []).join(", ").slice(0, 300)}`,
+            },
+          });
+        }
+        await enqueueRefreshSummary(req.dailyBranchId);
+        return;
+      }
+      case "cherry-pick-to-main": {
+        const { requirementId } = job.data;
+        const req = await prisma.requirement.findUniqueOrThrow({ where: { id: requirementId } });
+        let result;
+        try {
+          result = await cherryPickToMain(requirementId);
+        } catch (e) {
+          const msg = String(e instanceof Error ? e.message : e).slice(0, 300);
+          await prisma.reqEvent.create({
+            data: { requirementId, fromStatus: req.status, toStatus: req.status, actor: "system", note: `单独合入 main 失败：${msg}` },
+          });
+          throw e;
+        }
+        await prisma.reqEvent.create({
+          data: {
+            requirementId,
+            fromStatus: req.status,
+            toStatus: req.status,
+            actor: "system",
+            note: result.ok
+              ? `已单独合入 main（${result.sha}${result.via === "merge" ? "，直接合并 feature" : ""}）`
+              : `单独合入 main 冲突需人工处理：${(result.conflictFiles ?? []).join(", ").slice(0, 300)}`,
+          },
+        });
+        await enqueueRefreshSummary(req.dailyBranchId);
+        return;
+      }
+      case "fetch-repos": {
+        const projects = await prisma.project.findMany({ where: { active: true } });
+        for (const p of projects) {
+          try {
+            await fetchRepo(p);
+          } catch (e) {
+            logger.warn({ project: p.name, err: String(e instanceof Error ? e.message : e).slice(0, 200) }, "fetch repo failed");
+          }
+        }
+        return;
+      }
       case "write-repo-file": {
         const proj = await prisma.project.findUniqueOrThrow({ where: { id: job.data.projectId } });
         const latestDaily = await prisma.dailyBranch.findFirst({
@@ -201,20 +377,62 @@ const cronWorker = new Worker(
   "cron",
   async (job) => {
     logger.info({ name: job.name }, "cron tick");
-    switch (job.name) {
+    switch (job.name as CronName) {
       case "claim-timeout-scan": {
-        // 已实现：释放心跳超时的认领（config.claimTimeoutHours）
-        const cutoff = new Date(Date.now() - Number(process.env.CLAIM_TIMEOUT_HOURS || 4) * 3600_000);
-        const released = await prisma.devTask.updateMany({
+        // 释放心跳超时的认领，并把需求状态一起回退（之前只翻任务行，需求状态会卡在开发中/测试中）
+        const cutoff = new Date(Date.now() - (await claimTimeoutMs()));
+        const devTasks = await prisma.devTask.findMany({
           where: { status: "CLAIMED", lastHeartbeat: { lt: cutoff } },
-          data: { status: "POOL", claimedById: null, claimedAt: null, lastHeartbeat: null },
+          include: { requirement: { select: { status: true } } },
         });
-        const releasedTest = await prisma.testTask.updateMany({
+        for (const t of devTasks) {
+          await prisma.$transaction([
+            prisma.devTask.update({
+              where: { id: t.id },
+              data: { status: "POOL", claimedById: null, claimedAt: null, lastHeartbeat: null },
+            }),
+            prisma.requirement.updateMany({
+              where: { id: t.requirementId, status: "DEVELOPING" },
+              data: { status: "READY" },
+            }),
+            prisma.reqEvent.create({
+              data: {
+                requirementId: t.requirementId,
+                fromStatus: t.requirement.status,
+                toStatus: "READY",
+                actor: "system",
+                note: "心跳超时，自动释放回池",
+              },
+            }),
+          ]);
+        }
+        const testTasks = await prisma.testTask.findMany({
           where: { status: "CLAIMED", lastHeartbeat: { lt: cutoff } },
-          data: { status: "POOL", claimedById: null, claimedAt: null, lastHeartbeat: null },
+          include: { requirement: { select: { status: true } } },
         });
-        if (released.count || releasedTest.count) {
-          logger.warn({ dev: released.count, test: releasedTest.count }, "released timed-out claims");
+        for (const t of testTasks) {
+          await prisma.$transaction([
+            prisma.testTask.update({
+              where: { id: t.id },
+              data: { status: "POOL", claimedById: null, claimedAt: null, lastHeartbeat: null },
+            }),
+            prisma.requirement.updateMany({
+              where: { id: t.requirementId, status: "TESTING" },
+              data: { status: "PENDING_TEST" },
+            }),
+            prisma.reqEvent.create({
+              data: {
+                requirementId: t.requirementId,
+                fromStatus: t.requirement.status,
+                toStatus: "PENDING_TEST",
+                actor: "system",
+                note: "测试任务心跳超时，自动释放回池",
+              },
+            }),
+          ]);
+        }
+        if (devTasks.length || testTasks.length) {
+          logger.warn({ dev: devTasks.length, test: testTasks.length }, "released timed-out claims");
         }
         return;
       }
@@ -256,22 +474,67 @@ const cronWorker = new Worker(
           where: { createdAt: { gte: yStart, lt: dayStart } },
         });
         const total = (agg._sum.inputTokens ?? 0) + (agg._sum.outputTokens ?? 0);
-        const limitRow = await prisma.systemConfig.findUnique({ where: { key: "dailyTokenLimit" } });
-        const limit = limitRow ? Number(limitRow.value) : 0;
+        const limit = await getRuntimeNumber("dailyTokenLimit");
         if (limit > 0 && total > limit) {
+          const value = JSON.stringify({ date: yStart.toISOString().slice(0, 10), total, limit });
           await prisma.systemConfig.upsert({
             where: { key: "usageAlert" },
-            update: { value: JSON.stringify({ date: yStart.toISOString().slice(0, 10), total, limit }) },
-            create: { key: "usageAlert", value: JSON.stringify({ date: yStart.toISOString().slice(0, 10), total, limit }) },
+            update: { value },
+            create: { key: "usageAlert", value },
           });
-          await prisma.auditLog.create({
-            data: { actor: "system", action: "usage-limit-exceeded", detail: `昨日 ${total.toLocaleString()} tokens，超过上限 ${limit.toLocaleString()}` },
-          });
+          await audit("system", "usage-limit-exceeded", undefined, `昨日 ${total.toLocaleString()} tokens，超过上限 ${limit.toLocaleString()}`);
           logger.warn({ total, limit }, "daily token usage exceeded limit");
         }
         logger.info({ total }, "usage rollup done");
         return;
       }
+      case "fetch-repos":
+        // 走 git 队列，与其他 git 操作串行
+        await getQueues().git.add(
+          "fetch-repos",
+          { kind: "fetch-repos" },
+          { deduplication: { id: "fetch-repos" }, removeOnComplete: true, removeOnFail: 20 },
+        );
+        return;
+      case "bot-heartbeat-check": {
+        // 心跳超阈值（或从未心跳但存在启用的微信绑定）→ 写 wechatBotAlert；恢复则删除；首次进入告警写审计
+        const [lastSeenRow, alertRow, activeBindings, thresholdMin] = await Promise.all([
+          prisma.systemConfig.findUnique({ where: { key: "wechatBotLastSeen" } }),
+          prisma.systemConfig.findUnique({ where: { key: "wechatBotAlert" } }),
+          prisma.wechatBinding.count({ where: { paused: false } }),
+          getRuntimeNumber("botHeartbeatAlertMinutes"),
+        ]);
+        const lastSeen = lastSeenRow ? new Date(lastSeenRow.value) : null;
+        const validLastSeen = lastSeen && !Number.isNaN(lastSeen.getTime()) ? lastSeen : null;
+        const stale = validLastSeen
+          ? Date.now() - validLastSeen.getTime() > thresholdMin * 60_000
+          : activeBindings > 0;
+        if (stale) {
+          const value = JSON.stringify({ since: validLastSeen?.toISOString() ?? null, checkedAt: new Date().toISOString() });
+          await prisma.systemConfig.upsert({
+            where: { key: "wechatBotAlert" },
+            update: { value },
+            create: { key: "wechatBotAlert", value },
+          });
+          if (!alertRow) {
+            await audit(
+              "system",
+              "wechat-bot-offline",
+              undefined,
+              validLastSeen ? `最后心跳 ${validLastSeen.toISOString()}，超过 ${thresholdMin} 分钟` : "从未收到心跳",
+            );
+            logger.warn({ lastSeen: validLastSeen?.toISOString() ?? null, thresholdMin }, "wechat bot offline");
+          }
+        } else if (alertRow) {
+          await prisma.systemConfig.delete({ where: { key: "wechatBotAlert" } }).catch(() => {});
+          logger.info("wechat bot back online");
+        }
+        return;
+      }
+      case "reload-cron":
+        invalidateRuntimeConfig();
+        await registerCronJobs();
+        return;
       default:
         logger.info({ name: job.name }, "cron handler not yet implemented");
     }

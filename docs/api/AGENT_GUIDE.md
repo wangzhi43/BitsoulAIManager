@@ -4,6 +4,8 @@
 
 平台地址（BASE）：`https://pm.bitsouls.cn`（部署后确认）。所有接口 JSON 收发，错误统一为 `{"error":{"code","message"}}`。
 
+命令行封装：`docs/api/agent-cli.sh`（curl + jq），`./agent-cli.sh login <user> <pass>` 后即可 `tasks / claim / context / heartbeat / submit / release / report`。
+
 ## 快速开始（开发 Agent）
 
 ```bash

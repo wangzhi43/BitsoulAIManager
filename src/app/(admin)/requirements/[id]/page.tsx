@@ -2,455 +2,433 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { isDemoMode, DEMO_REQ_DETAIL, DEMO } from "@/lib/demo";
-import { PageShell, PageHeader, Panel, Chip } from "@/components/ui";
-import { StatusChip, PriorityChip } from "@/components/status";
-import { AcceptActions, ManageActions, ClarifyCard, ConfirmActionBar, RefreshButton, TodoAction } from "./ui";
+import { PageShell, PageHeader, Panel, Chip, KV, Stepper, Timeline, Notice, DemoNote, fmtDateTime, ago } from "@/components/ui";
+import { StatusChip, PriorityChip, ComplexityChip, STATUS_FLOW, STATUS_LABEL, CHANNEL_LABEL, actorLabel } from "@/components/status";
+import { Icon } from "@/components/icons";
+import { ActionPanel, ClarifyPanel, CasesTable, RefreshButton, type DetailData } from "./ui";
 
 export const dynamic = "force-dynamic";
 
-// 需求详情页：严格按 docs/ui_design/VPQ4C0eC3FBpC4bO.png 布局
-// 主列 = 用户故事 / 验收标准 / 复杂度+涉及模块并排 / 原始消息摘要 / 流转时间线
-// 右列 = AI 置信信息 / 澄清问题 / 关联需求 / 验收与管理操作 / 交付信息
-// 待确认状态追加底部固定操作条（编辑 / 拆开需求 / 合并 / 驳回重拆 / 确认进入待开发）
+// 需求详情（设计画布「需求详情」画板）：状态进度条 + 主列内容 + 右栏「当前动作 / 属性」。
+// 真实模式全部来自数据库；无澄清 / 无原始消息 / 无报告的区块直接不渲染。
 
-// MOCK 数据：真实链路未接入时的界面填充，后续替换
-// - confidence：数据库无置信度字段，整卡使用 mock
-// - estimateDays：无预估人天字段，按复杂度映射
-// - modules / clarifications / rawMessage：优先真实数据，为空时回退 mock 保证视觉与参考图一致
-const MOCK = {
-  confidence: {
-    score: 85,
-    advice: "需求可确认",
-    metrics: [
-      { label: "需求完整性", value: 80 },
-      { label: "需求清晰度", value: 85 },
-      { label: "实现可行性", value: 90 },
-    ],
-  },
-  estimateDays: { S: 1, M: 3, L: 5 } as Record<string, number>,
-  modules: ["报表中心", "用户管理"],
-  clarifications: [
-    { question: "是否需要支持子部门的汇总统计？", answer: null },
-    { question: "除了使用时长，是否还需要统计使用次数或其他指标？", answer: null },
-  ],
-  rawMessage: "我们想看下各个部门的使用时长，现在的报表只能看到整体，没法按部门看，能加个按部门统计的功能吗？",
-};
-
-interface Detail {
-  id: string;
-  seq: number;
-  title: string;
-  status: string;
-  priority: string | null;
-  complexity: string;
-  moduleGuess: string | null;
-  project: string | null;
-  projectId: string | null;
-  sourceChannel: string;
-  userStory: string;
-  acceptance: string[];
-  clarifications: { question: string; answer: string | null }[];
-  featureBranch: string | null;
-  dailyBranch: string | null;
-  customer: string | null;
-  createdAt: Date | null;
-  rawMessages: { sender: string; ts: string | null; text: string }[];
-  related: { id: string; seq: number; title: string; status: string; kind: "parent" | "defect" }[];
-  submitNote: string | null;
-  agent: string | null;
-  report: { conclusion: string; passRate: number; cases: number } | null;
-  events: { at: Date; actor: string; note: string; to: string }[];
+interface RawMsg {
+  text?: string;
+  ts?: string | number;
+  sender?: string;
+  attachmentId?: string;
 }
 
-const COMPLEXITY: Record<string, { label: string; tone: "green" | "amber" | "red" }> = {
-  S: { label: "简单", tone: "green" },
-  M: { label: "中等", tone: "amber" },
-  L: { label: "复杂", tone: "red" },
+const FLOW_LABEL: Record<string, string> = {
+  PENDING_CONFIRM: "待确认",
+  READY: "待开发",
+  DEVELOPING: "开发中",
+  PENDING_TEST: "待测试",
+  TESTING: "测试中",
+  PENDING_ACCEPT: "待验收",
+  ACCEPTED: "已验收",
 };
 
-function fmtRawTs(ts: unknown): string | null {
-  let date: Date | null = null;
-  if (typeof ts === "number") date = new Date(ts < 1e12 ? ts * 1000 : ts);
-  else if (typeof ts === "string" && ts) {
-    const parsed = new Date(ts);
-    if (!Number.isNaN(parsed.getTime())) date = parsed;
-  }
-  return date ? date.toLocaleString("zh-CN", { hour12: false }) : null;
+function flowIndex(status: string): number {
+  if (status === "REVIEWING") return STATUS_FLOW.indexOf("TESTING");
+  const i = STATUS_FLOW.indexOf(status as (typeof STATUS_FLOW)[number]);
+  return i;
 }
 
 export default async function RequirementDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const demo = await isDemoMode();
 
-  let d: Detail;
+  let d: DetailData;
   let projects: { id: string; name: string }[] = [];
-  let mergeCandidates: { id: string; seq: number; title: string }[] = [];
 
   if (demo) {
-    // 展示模式：待确认列表里的示例单展示确认阶段视图，其余复用通用示例详情
     const c = DEMO.confirmItems.find((x) => x.id === id);
-    if (c) {
-      d = {
-        id: c.id,
-        seq: c.seq,
-        title: c.title,
-        status: "PENDING_CONFIRM",
-        priority: null,
-        complexity: c.complexity,
-        moduleGuess: null,
-        project: c.projectName,
-        projectId: c.projectId,
-        sourceChannel: c.source.channel,
-        userStory: c.userStory,
-        acceptance: c.acceptance,
-        clarifications: c.clarifications,
-        featureBranch: null,
-        dailyBranch: null,
-        customer: c.source.customer ?? c.source.sender,
-        createdAt: new Date(Date.now() - 2 * 3600_000),
-        rawMessages: [],
-        related: [],
-        submitNote: null,
-        agent: null,
-        report: null,
-        events: [{ at: new Date(Date.now() - 2 * 3600_000), actor: "expert:PRODUCT", note: "自动拆解", to: "PENDING_CONFIRM" }],
-      };
-    } else {
-      d = {
-        ...DEMO_REQ_DETAIL,
-        id,
-        moduleGuess: null,
-        projectId: null,
-        sourceChannel: "WECHAT",
-        createdAt: DEMO_REQ_DETAIL.events[0]?.at ?? null,
-        rawMessages: [],
-        related: [],
-      };
-    }
+    const base = DEMO_REQ_DETAIL;
+    d = c
+      ? {
+          id: c.id,
+          seq: c.seq,
+          title: c.title,
+          status: "PENDING_CONFIRM",
+          priority: null,
+          priorityReason: null,
+          priorityLocked: false,
+          complexity: c.complexity,
+          moduleGuess: null,
+          projectId: c.projectId,
+          projectName: c.projectName,
+          source: { channel: c.source.channel, sender: c.source.sender, customer: c.source.customer, wechat: c.source.channel === "WECHAT" },
+          userStory: c.userStory,
+          acceptance: c.acceptance,
+          clarifications: c.clarifications,
+          featureBranch: null,
+          daily: null,
+          devTask: null,
+          testTask: null,
+          report: null,
+          rawMessages: [{ sender: c.source.sender ?? "客户", ts: new Date(Date.now() - 7200_000).toISOString(), text: c.userStory }],
+          attachments: [],
+          parent: null,
+          defects: [],
+          siblings: [],
+          createdAt: new Date(Date.now() - 7200_000).toISOString(),
+          updatedAt: new Date(Date.now() - 3600_000).toISOString(),
+          events: [{ at: new Date(Date.now() - 7200_000).toISOString(), actor: "expert:PRODUCT", note: "自动拆解", from: null, to: "PENDING_CONFIRM" }],
+        }
+      : {
+          id,
+          seq: base.seq,
+          title: base.title,
+          status: base.status,
+          priority: base.priority,
+          priorityReason: "客户高频反馈，工作量适中",
+          priorityLocked: true,
+          complexity: base.complexity,
+          moduleGuess: "客户管理",
+          projectId: "demo-p2",
+          projectName: base.project,
+          source: { channel: "WECHAT", sender: "李经理", customer: "比灵科技", wechat: true },
+          userStory: base.userStory,
+          acceptance: base.acceptance,
+          clarifications: [],
+          featureBranch: base.featureBranch,
+          daily: { id: "demo-b1", name: base.dailyBranch, mergedToMain: false },
+          devTask: { id: "demo-dt", status: "MERGED", agent: base.agent, submitNote: base.submitNote, selfTest: "验收 1-3 逐条通过", commits: ["e7f3a9b"], submittedAt: new Date(Date.now() - 6 * 3600_000).toISOString(), claimedAt: new Date(Date.now() - 20 * 3600_000).toISOString(), lastHeartbeat: null },
+          testTask: { id: "demo-tt", status: "DONE", agent: "test-agent-1", caseCount: 8, cases: [
+            { step: "列表首屏加载 20 条", expected: "展示 20 条并显示总数", tag: "功能" },
+            { step: "滚动到底自动加载第二页", expected: "追加 20 条，无重复", tag: "功能" },
+            { step: "总数为 0 时显示空态", expected: "显示「暂无客户」", tag: "边界" },
+          ] },
+          report: { conclusion: "PASS", passRate: 1, agent: "test-agent-1", createdAt: new Date(Date.now() - 1800_000).toISOString(), repoFilePath: "docs/test-reports/REQ-95.md", results: [{ caseIdx: 0, pass: true }, { caseIdx: 1, pass: true }, { caseIdx: 2, pass: true }], defects: [] },
+          rawMessages: [{ sender: "李经理", ts: new Date(Date.now() - 26 * 3600_000).toISOString(), text: "客户列表现在一次全加载太卡了，能不能分页？" }],
+          attachments: [],
+          parent: null,
+          defects: [],
+          siblings: [],
+          createdAt: base.events[0].at.toISOString(),
+          updatedAt: base.events.at(-1)!.at.toISOString(),
+          events: base.events.map((e, i, arr) => ({ at: e.at.toISOString(), actor: e.actor, note: e.note, from: arr[i - 1]?.to ?? null, to: e.to })),
+        };
     projects = DEMO.dashboard.projects.map((p) => ({ id: p.id, name: p.name }));
-    mergeCandidates = DEMO.confirmItems.filter((x) => x.id !== id).map((x) => ({ id: x.id, seq: x.seq, title: x.title }));
   } else {
     const r = await prisma.requirement.findUnique({
       where: { id },
       include: {
-        project: { select: { name: true } },
-        source: { select: { customerName: true, senderName: true, channel: true, rawMessages: true } },
-        dailyBranch: { select: { name: true } },
-        devTask: { select: { submitNote: true, claimedBy: { select: { username: true } } } },
-        testTasks: { include: { report: true } },
+        project: { select: { id: true, name: true } },
+        source: { include: { attachments: { select: { id: true, filename: true, mime: true } } } },
+        dailyBranch: { select: { id: true, name: true, mergedToMain: true } },
+        devTask: { include: { claimedBy: { select: { username: true } } } },
+        testTasks: { include: { report: true, claimedBy: { select: { username: true } } }, orderBy: { createdAt: "asc" } },
         events: { orderBy: { createdAt: "asc" } },
         parent: { select: { id: true, seq: true, title: true, status: true } },
         defects: { select: { id: true, seq: true, title: true, status: true } },
       },
     });
     if (!r) notFound();
-    const report = r.testTasks.map((t) => t.report).filter(Boolean).at(-1);
-    const sender = r.source.senderName ?? r.source.customerName ?? "客户";
-    const raw = (r.source.rawMessages as { text?: string; ts?: number | string }[] | null) ?? [];
+    const [siblings, dbProjects] = await Promise.all([
+      prisma.requirement.findMany({ where: { sourceId: r.sourceId, id: { not: r.id } }, select: { id: true, seq: true, title: true, status: true }, orderBy: { seq: "asc" } }),
+      prisma.project.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { createdAt: "asc" } }),
+    ]);
+    const lastTest = r.testTasks.at(-1) ?? null;
+    const lastReport = [...r.testTasks].reverse().map((t) => t.report).find(Boolean) ?? null;
+    const attById = new Map(r.source.attachments.map((a) => [a.id, a]));
+    const raw = (r.source.rawMessages as unknown as RawMsg[] | null) ?? [];
     d = {
       id: r.id,
       seq: r.seq,
       title: r.title,
       status: r.status,
       priority: r.priority,
+      priorityReason: r.priorityReason,
+      priorityLocked: r.priorityLocked,
       complexity: r.complexity,
       moduleGuess: r.moduleGuess,
-      project: r.project?.name ?? null,
       projectId: r.projectId,
-      sourceChannel: r.source.channel,
+      projectName: r.project?.name ?? null,
+      source: { channel: r.source.channel, sender: r.source.senderName, customer: r.source.customerName, wechat: r.source.channel === "WECHAT" && !!r.source.wechatConvId },
       userStory: r.userStory,
-      acceptance: r.acceptance as string[],
-      clarifications: (r.clarifications as { question: string; answer: string | null }[] | null) ?? [],
+      acceptance: (r.acceptance as string[]) ?? [],
+      clarifications: ((r.clarifications as { question: string; answer: string | null }[] | null) ?? []).filter((c) => c && c.question),
       featureBranch: r.featureBranch,
-      dailyBranch: r.dailyBranch?.name ?? null,
-      customer: r.source.customerName ?? r.source.senderName,
-      createdAt: r.createdAt,
-      rawMessages: raw.filter((m) => m.text).map((m) => ({ sender, ts: fmtRawTs(m.ts), text: m.text as string })),
-      related: [
-        ...(r.parent ? [{ ...r.parent, kind: "parent" as const }] : []),
-        ...r.defects.map((x) => ({ ...x, kind: "defect" as const })),
-      ],
-      submitNote: r.devTask?.submitNote ?? null,
-      agent: r.devTask?.claimedBy?.username ?? null,
-      report: report
-        ? { conclusion: report.conclusion, passRate: report.passRate, cases: (r.testTasks.at(-1)?.cases as unknown[])?.length ?? 0 }
+      daily: r.dailyBranch ? { id: r.dailyBranch.id, name: r.dailyBranch.name, mergedToMain: r.dailyBranch.mergedToMain } : null,
+      devTask: r.devTask
+        ? {
+            id: r.devTask.id,
+            status: r.devTask.status,
+            agent: r.devTask.claimedBy?.username ?? null,
+            submitNote: r.devTask.submitNote,
+            selfTest: r.devTask.selfTest,
+            commits: (r.devTask.commits as string[] | null) ?? [],
+            submittedAt: r.devTask.submittedAt?.toISOString() ?? null,
+            claimedAt: r.devTask.claimedAt?.toISOString() ?? null,
+            lastHeartbeat: r.devTask.lastHeartbeat?.toISOString() ?? null,
+          }
         : null,
-      events: r.events.map((e) => ({ at: e.createdAt, actor: e.actor, note: e.note ?? "", to: e.toStatus })),
+      testTask: lastTest
+        ? {
+            id: lastTest.id,
+            status: lastTest.status,
+            agent: lastTest.claimedBy?.username ?? null,
+            caseCount: ((lastTest.cases as unknown[]) ?? []).length,
+            cases: ((lastTest.cases as { step: string; expected: string; tag: string }[]) ?? []),
+          }
+        : null,
+      report: lastReport
+        ? {
+            conclusion: lastReport.conclusion,
+            passRate: lastReport.passRate,
+            agent: r.testTasks.find((t) => t.report?.id === lastReport.id)?.claimedBy?.username ?? null,
+            createdAt: lastReport.createdAt.toISOString(),
+            repoFilePath: lastReport.repoFilePath,
+            results: ((lastReport.results as { caseIdx: number; pass: boolean; note?: string }[]) ?? []),
+            defects: ((lastReport.defects as { desc: string }[] | null) ?? []),
+          }
+        : null,
+      rawMessages: raw
+        .filter((m) => m.text || m.attachmentId)
+        .map((m) => ({
+          sender: m.sender ?? r.source.senderName ?? r.source.customerName ?? "—",
+          ts: m.ts == null ? null : typeof m.ts === "number" ? new Date(m.ts * (m.ts < 1e12 ? 1000 : 1)).toISOString() : String(m.ts),
+          text: m.text ?? (m.attachmentId ? `［附件：${attById.get(m.attachmentId)?.filename ?? m.attachmentId}］` : ""),
+        })),
+      attachments: r.source.attachments.map((a) => ({ name: a.filename, mime: a.mime })),
+      parent: r.parent,
+      defects: r.defects,
+      siblings,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+      events: r.events.map((e) => ({ at: e.createdAt.toISOString(), actor: e.actor, note: e.note ?? "", from: e.fromStatus, to: e.toStatus })),
     };
-    if (d.status === "PENDING_CONFIRM") {
-      const [dbProjects, pending] = await Promise.all([
-        prisma.project.findMany({ where: { active: true }, select: { id: true, name: true } }),
-        prisma.requirement.findMany({
-          where: { status: "PENDING_CONFIRM", id: { not: id } },
-          select: { id: true, seq: true, title: true },
-          orderBy: { seq: "asc" },
-        }),
-      ]);
-      projects = dbProjects;
-      mergeCandidates = pending;
-    }
+    projects = dbProjects;
   }
 
-  const isPendingConfirm = d.status === "PENDING_CONFIRM";
-  const backHref = isPendingConfirm ? "/confirm" : "/requirements";
-  const backLabel = isPendingConfirm ? "需求确认" : "全部需求";
-  const cplx = COMPLEXITY[d.complexity] ?? { label: d.complexity, tone: "amber" as const };
-  const estimateDays = MOCK.estimateDays[d.complexity] ?? 3;
-  const createdAt = d.createdAt ? new Date(d.createdAt) : new Date();
-  // 需求ID 展示格式 REQ-yyyymmdd-xxxx，由创建日期 + seq 拼装
-  const reqCode = `REQ-${createdAt.toISOString().slice(0, 10).replace(/-/g, "")}-${String(d.seq).padStart(4, "0")}`;
-  const hasDelivery = Boolean(d.featureBranch || d.dailyBranch || d.agent || d.submitNote || d.report);
+  const terminal = d.status === "CLOSED" || d.status === "ON_HOLD";
+  // 终态：按流转记录找最后到达的流程状态
+  const lastFlow = terminal ? [...d.events].reverse().find((e) => flowIndex(e.from ?? "") >= 0)?.from ?? "PENDING_CONFIRM" : d.status;
+  const current = Math.max(0, flowIndex(lastFlow));
+  const isReviewing = d.status === "REVIEWING";
+  const backHref = d.status === "PENDING_CONFIRM" ? "/confirm" : "/requirements";
 
-  // 为空时回退 mock，保证与参考图区块一致
-  const modules = d.moduleGuess ? d.moduleGuess.split(/[,，、/|\s]+/).filter(Boolean) : MOCK.modules;
-  const clarifyMock = d.clarifications.length === 0;
-  const clarifications = clarifyMock ? MOCK.clarifications : d.clarifications;
-  const rawMessages =
-    d.rawMessages.length > 0
-      ? d.rawMessages
-      : [
-          {
-            sender: d.customer ?? "客户",
-            ts: createdAt.toLocaleString("zh-CN", { hour12: false }),
-            text: MOCK.rawMessage,
-          },
-        ];
+  const caseRows = d.testTask?.cases.map((c, i) => ({ idx: i, step: c.step, expected: c.expected, tag: c.tag, pass: d.report?.results.find((x) => x.caseIdx === i)?.pass ?? null, note: d.report?.results.find((x) => x.caseIdx === i)?.note ?? null })) ?? [];
 
   return (
     <PageShell>
       <PageHeader
+        back={{ href: backHref }}
         title={
-          <span className="flex items-center gap-2 text-[14px] font-normal">
-            <Link href={backHref} className="text-slate-400 hover:text-slate-600">
-              {backLabel}
-            </Link>
-            <span className="text-slate-300">/</span>
-            <span className="font-semibold text-slate-800">需求详情</span>
+          <span className="flex items-center gap-2.5">
+            <span className="font-mono text-[13px] font-normal text-ink-3">REQ-{d.seq}</span>
+            <span className="truncate">{d.title}</span>
           </span>
         }
-        actions={
-          <>
-            <TodoAction label="使用帮助" kind="ghost" />
-            <RefreshButton />
-          </>
-        }
+        actions={<RefreshButton />}
       />
+      {demo && <DemoNote />}
+      {terminal && (
+        <Notice tone="warn">
+          该需求已{STATUS_LABEL[d.status]}。{d.events.at(-1)?.note ? `原因：${d.events.at(-1)?.note}` : ""}可在右侧「当前动作」恢复。
+        </Notice>
+      )}
+      {isReviewing && <Notice tone="warn">测试部分通过，等待管理员裁决：放行进入待验收，或退回开发池重做。</Notice>}
+      {d.devTask?.status === "CONFLICT" && <Notice tone="danger">feature 分支合并到当日分支时发生冲突。请在本地解决冲突并 push 后「重试合并」，或将本需求剔除回待开发。</Notice>}
 
-      {/* 标题区：返回 + 大标题 + 元信息行，右上需求 ID 与创建时间 */}
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
-        <div className="min-w-0">
-          <Link href={backHref} className="text-[12px] font-medium text-blue-600 hover:underline">
-            ← 返回列表
-          </Link>
-          <h1 className="mt-1.5 text-[22px] font-semibold tracking-tight text-slate-800">{d.title}</h1>
-          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px] text-slate-500">
-            <span>
-              项目：<span className="text-slate-700">{d.project ?? "未指定"}</span>
-            </span>
-            <span>
-              来源：<span className="text-slate-700">{d.sourceChannel === "WECHAT" ? "微信反馈" : "手动导入"}</span>
-            </span>
-            <span>
-              创建人：<span className="text-slate-700">{d.customer ?? "—"}</span>
-            </span>
-            <span className="flex items-center gap-1">
-              优先级：{d.priority ? <PriorityChip priority={d.priority} /> : <span className="text-slate-400">未定</span>}
-            </span>
-            <StatusChip status={d.status} />
-          </div>
-        </div>
-        <div className="text-right text-[12px] text-slate-400">
-          <p>
-            需求ID：<span className="font-mono tabular-nums text-slate-700">{reqCode}</span>
-          </p>
-          <p className="mt-1">
-            创建时间：<span className="tabular-nums text-slate-600">{createdAt.toLocaleString("zh-CN", { hour12: false })}</span>
-          </p>
-        </div>
-      </div>
+      <Stepper steps={STATUS_FLOW.map((k) => ({ key: k, label: FLOW_LABEL[k] }))} current={current} />
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_340px]">
-        {/* 主列 */}
-        <div className="min-w-0 space-y-4">
-          <Panel title="用户故事">
-            <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-slate-600">{d.userStory}</p>
-          </Panel>
-
-          <Panel title="验收标准">
-            {d.acceptance.length > 0 ? (
-              <ol className="space-y-2">
-                {d.acceptance.map((a, i) => (
-                  <li key={i} className="flex gap-2 text-[13px] leading-relaxed text-slate-600">
-                    <span className="tabular-nums text-slate-400">{i + 1}.</span>
-                    <span>{a}</span>
-                  </li>
-                ))}
-              </ol>
-            ) : (
-              <p className="text-[12px] text-slate-400">暂无验收标准</p>
-            )}
-          </Panel>
-
-          {/* 复杂度 + 涉及模块并排 */}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Panel title="复杂度">
-              <div className="flex items-center gap-2">
-                <Chip tone={cplx.tone}>{cplx.label}</Chip>
-              </div>
-              <p className="mt-2.5 text-[13px] text-slate-600">
-                预估：<span className="tabular-nums">{estimateDays}</span> 人天
-              </p>
-            </Panel>
-            <Panel title="涉及模块">
-              <div className="flex flex-wrap gap-1.5">
-                {modules.map((m) => (
-                  <Chip key={m}>{m}</Chip>
-                ))}
-              </div>
-            </Panel>
-          </div>
-
-          <Panel title="原始消息摘要">
-            <div className="space-y-2.5">
-              {rawMessages.map((m, i) => (
-                <blockquote key={i} className="rounded-lg bg-slate-50 p-3">
-                  <p className="text-[12px] text-slate-400">
-                    {m.sender}
-                    {m.ts ? `（${m.ts}）` : ""}：
-                  </p>
-                  <p className="mt-1 whitespace-pre-wrap text-[13px] leading-relaxed text-slate-600">{m.text}</p>
-                </blockquote>
-              ))}
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
+        {/* 手机端把动作放最前面 */}
+        <div className="flex w-full shrink-0 flex-col gap-4 xl:order-2 xl:w-[340px]">
+          <ActionPanel d={d} projects={projects} demo={demo} />
+          <Panel title="属性" pad={false}>
+            <div className="px-4">
+              <KV
+                items={[
+                  { k: "状态", v: <StatusChip status={d.status} /> },
+                  {
+                    k: "优先级",
+                    v: d.priority ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <PriorityChip priority={d.priority} />
+                        {d.priorityLocked && <Icon name="lock" size={12} className="text-ink-3" />}
+                        {d.priorityReason && <span className="max-w-[180px] truncate text-[12px] text-ink-3" title={d.priorityReason}>{d.priorityReason}</span>}
+                      </span>
+                    ) : (
+                      <span className="text-ink-3">项管专家待排序</span>
+                    ),
+                  },
+                  { k: "复杂度", v: <ComplexityChip complexity={d.complexity} /> },
+                  { k: "项目", v: d.projectName ?? <span className="text-danger">未指定</span> },
+                  { k: "涉及模块", v: d.moduleGuess ?? <span className="text-ink-3">—</span> },
+                  { k: "来源", v: [CHANNEL_LABEL[d.source.channel] ?? d.source.channel, d.source.customer, d.source.sender !== d.source.customer ? d.source.sender : null].filter(Boolean).join(" · ") },
+                  { k: "开发 Agent", v: d.devTask?.agent ? <span className="font-mono text-[12px]">{d.devTask.agent}</span> : <span className="text-ink-3">—</span> },
+                  { k: "测试 Agent", v: d.testTask?.agent ? <span className="font-mono text-[12px]">{d.testTask.agent}</span> : <span className="text-ink-3">—</span> },
+                  { k: "feature 分支", v: d.featureBranch ? <span className="font-mono text-[12px] text-accent">{d.featureBranch}</span> : <span className="text-ink-3">认领后创建</span> },
+                  {
+                    k: "所在 daily",
+                    v: d.daily ? (
+                      <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                        <Link href={`/branches?branch=${d.daily.id}`} className="font-mono text-[12px] text-accent hover:underline">
+                          {d.daily.name}
+                        </Link>
+                        {d.daily.mergedToMain ? <Chip tone="green">已合并 main</Chip> : <Chip tone="amber">未合并</Chip>}
+                      </span>
+                    ) : (
+                      <span className="text-ink-3">—</span>
+                    ),
+                  },
+                  {
+                    k: "关联",
+                    v:
+                      d.parent || d.defects.length ? (
+                        <span className="flex flex-col items-end gap-1">
+                          {d.parent && (
+                            <Link href={`/requirements/${d.parent.id}`} className="text-accent hover:underline">
+                              缺陷来源 REQ-{d.parent.seq}
+                            </Link>
+                          )}
+                          {d.defects.map((x) => (
+                            <Link key={x.id} href={`/requirements/${x.id}`} className="text-accent hover:underline">
+                              派生缺陷 REQ-{x.seq} <StatusChip status={x.status} />
+                            </Link>
+                          ))}
+                        </span>
+                      ) : (
+                        <span className="text-ink-3">无</span>
+                      ),
+                  },
+                  { k: "创建", v: <span className="num text-[12px]">{fmtDateTime(d.createdAt)}</span> },
+                  { k: "更新", v: <span className="num text-[12px]">{ago(d.updatedAt)}</span> },
+                ]}
+              />
             </div>
           </Panel>
-
-          <Panel title="流转时间线">
-            {d.events.length > 0 ? (
-              <ol className="relative space-y-3.5 border-l border-slate-200 pl-4">
-                {d.events.map((e, i) => (
-                  <li key={i} className="relative">
-                    <span className="absolute -left-[21.5px] top-1 h-2.5 w-2.5 rounded-full border-2 border-white bg-blue-500" />
-                    <p className="text-[13px]">
-                      <StatusChip status={e.to} /> <span className="ml-1 text-slate-600">{e.note}</span>
-                    </p>
-                    <p className="mt-0.5 text-[11px] tabular-nums text-slate-400">
-                      {new Date(e.at).toLocaleString("zh-CN", { hour12: false })} · {e.actor}
-                    </p>
-                  </li>
-                ))}
-              </ol>
-            ) : (
-              <p className="text-[12px] text-slate-400">暂无流转记录</p>
-            )}
-          </Panel>
-        </div>
-
-        {/* 右列 */}
-        <div className="space-y-4">
-          {/* AI 置信信息：数据库无置信度字段，整卡为 MOCK 填充 */}
-          <Panel title="AI 置信信息">
-            <div className="flex items-center justify-between gap-3 rounded-lg bg-blue-50/60 px-3 py-2.5">
-              <p>
-                <span className="text-[26px] font-bold leading-none tabular-nums text-blue-600">{MOCK.confidence.score}%</span>
-                <span className="ml-1.5 text-[12px] text-slate-500">置信度</span>
-              </p>
-              <p className="text-[12px] text-slate-500">
-                建议：<span className="font-medium text-green-600">{MOCK.confidence.advice}</span>
-              </p>
-            </div>
-            <dl className="mt-3.5 space-y-3">
-              {MOCK.confidence.metrics.map((m) => (
-                <div key={m.label} className="flex items-center gap-3">
-                  <dt className="w-[72px] shrink-0 text-[12px] text-slate-500">{m.label}</dt>
-                  <dd className="flex min-w-0 flex-1 items-center gap-2">
-                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
-                      <div className="h-full rounded-full bg-blue-600" style={{ width: `${m.value}%` }} />
-                    </div>
-                    <span className="w-9 shrink-0 text-right text-[12px] tabular-nums text-slate-600">{m.value}%</span>
-                  </dd>
-                </div>
-              ))}
-            </dl>
-            <p className="mt-3.5 border-t border-slate-100 pt-2.5 text-[11px] text-slate-400">AI 分析仅供参考，请结合实际情况判断</p>
-          </Panel>
-
-          <ClarifyCard id={d.id} clarifications={clarifications} demo={demo} mock={clarifyMock} />
-
-          <Panel title="关联需求" extra={<TodoAction label="+ 选择需求" kind="link" />}>
-            {d.related.length > 0 ? (
-              <ul className="space-y-2">
-                {d.related.map((r) => (
-                  <li key={r.id} className="flex items-center justify-between gap-2">
-                    <Link href={`/requirements/${r.id}`} className="min-w-0 truncate text-[13px] text-slate-600 hover:text-blue-600">
-                      <span className="mr-1.5 font-mono text-[11px] tabular-nums text-slate-400">REQ-{r.seq}</span>
-                      {r.title}
+          {d.siblings.length > 0 && (
+            <Panel title="同线索需求" pad={false}>
+              <ul className="divide-y divide-line">
+                {d.siblings.map((s) => (
+                  <li key={s.id} className="flex items-center gap-2 px-4 py-2 text-[13px]">
+                    <span className="font-mono text-[12px] text-ink-3">REQ-{s.seq}</span>
+                    <Link href={`/requirements/${s.id}`} className="min-w-0 flex-1 truncate text-ink hover:text-accent">
+                      {s.title}
                     </Link>
-                    <span className="flex shrink-0 items-center gap-1">
-                      <Chip tone={r.kind === "defect" ? "red" : "slate"}>{r.kind === "defect" ? "缺陷" : "原需求"}</Chip>
-                      <StatusChip status={r.status} />
-                    </span>
+                    <StatusChip status={s.status} />
                   </li>
                 ))}
               </ul>
-            ) : (
-              <p className="text-[12px] text-slate-400">暂无关联需求</p>
-            )}
-          </Panel>
-
-          <AcceptActions id={d.id} status={d.status} demo={demo} />
-          <ManageActions id={d.id} status={d.status} demo={demo} />
-
-          {hasDelivery && (
-            <Panel title="交付信息">
-              <dl className="space-y-2.5 text-[13px]">
-                <div>
-                  <dt className="text-[11px] text-slate-400">Feature 分支</dt>
-                  <dd className="font-mono text-[12px] text-slate-700">{d.featureBranch ?? "—"}</dd>
-                </div>
-                <div>
-                  <dt className="text-[11px] text-slate-400">所在日分支</dt>
-                  <dd className="font-mono text-[12px] text-slate-700">{d.dailyBranch ?? "—"}</dd>
-                </div>
-                <div>
-                  <dt className="text-[11px] text-slate-400">开发 Agent</dt>
-                  <dd className="text-slate-700">{d.agent ?? "—"}</dd>
-                </div>
-                {d.submitNote && (
-                  <div>
-                    <dt className="text-[11px] text-slate-400">提交说明</dt>
-                    <dd className="text-slate-600">{d.submitNote}</dd>
-                  </div>
-                )}
-                {d.report && (
-                  <div>
-                    <dt className="text-[11px] text-slate-400">测试报告</dt>
-                    <dd className="mt-0.5">
-                      <Chip tone={d.report.conclusion === "PASS" ? "green" : "red"}>
-                        {d.report.conclusion === "PASS" ? "✓" : "✗"} {d.report.conclusion} · 通过率 {Math.round(d.report.passRate * 100)}% ·{" "}
-                        {d.report.cases} 条用例
-                      </Chip>
-                    </dd>
-                  </div>
-                )}
-              </dl>
             </Panel>
           )}
         </div>
-      </div>
 
-      {/* 待确认状态：底部固定操作条 */}
-      {isPendingConfirm && (
-        <ConfirmActionBar
-          id={d.id}
-          demo={demo}
-          title={d.title}
-          userStory={d.userStory}
-          acceptance={d.acceptance}
-          projectId={d.projectId}
-          projects={projects}
-          candidates={mergeCandidates}
-        />
-      )}
+        <div className="flex min-w-0 flex-1 flex-col gap-4 xl:order-1">
+          <Panel title="用户故事">
+            <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{d.userStory}</p>
+          </Panel>
+          <Panel title={`验收标准（${d.acceptance.length}）`} pad={false}>
+            <ol className="divide-y divide-line px-4">
+              {d.acceptance.map((a, i) => (
+                <li key={i} className="flex items-center gap-3 py-2 text-[13px] text-ink">
+                  <span className="num w-4 shrink-0 font-mono text-[12px] text-ink-3">{i + 1}</span>
+                  <span className="flex-1">{a}</span>
+                </li>
+              ))}
+            </ol>
+          </Panel>
+          {d.clarifications.length > 0 && <ClarifyPanel d={d} demo={demo} />}
+          {d.devTask?.submitNote && (
+            <Panel title="开发提交">
+              <div className="flex flex-col gap-2 text-[13px]">
+                <p className="whitespace-pre-wrap text-ink">{d.devTask.submitNote}</p>
+                {d.devTask.selfTest && (
+                  <div className="rounded-md border border-line bg-surface-2 px-3 py-2">
+                    <p className="mb-1 text-[11px] font-medium uppercase tracking-[0.04em] text-ink-3">自测结果</p>
+                    <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-ink-2">{d.devTask.selfTest}</p>
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-ink-3">
+                  {d.devTask.commits.map((c) => (
+                    <Chip key={c} tone="outline" className="font-mono">
+                      {c.slice(0, 8)}
+                    </Chip>
+                  ))}
+                  <span className="ml-auto">
+                    <span className="font-mono">{d.devTask.agent}</span> · {fmtDateTime(d.devTask.submittedAt)}
+                  </span>
+                </div>
+              </div>
+            </Panel>
+          )}
+          {(d.report || d.testTask) && (
+            <Panel title="测试报告" pad={false}>
+              <div className="px-4 pt-3">
+                {d.report ? (
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-2">
+                    <span className={`text-[20px] font-semibold ${d.report.conclusion === "PASS" ? "text-ok" : d.report.conclusion === "FAIL" ? "text-danger" : "text-warn"}`}>{d.report.conclusion}</span>
+                    <span>
+                      通过率 {Math.round(d.report.passRate * 100)}%（{d.report.results.filter((x) => x.pass).length}/{d.report.results.length}）
+                    </span>
+                    {d.report.agent && <span className="font-mono">{d.report.agent}</span>}
+                    <span>{fmtDateTime(d.report.createdAt)}</span>
+                    {d.report.repoFilePath && <span className="ml-auto font-mono text-accent">{d.report.repoFilePath}</span>}
+                  </div>
+                ) : (
+                  <p className="text-[12px] text-ink-2">
+                    测试任务 {d.testTask?.caseCount} 条用例 · {d.testTask?.status === "POOL" ? "待测试 Agent 认领" : d.testTask?.status === "CLAIMED" ? `${d.testTask.agent} 测试中` : STATUS_LABEL[d.status]}
+                  </p>
+                )}
+              </div>
+              {caseRows.length > 0 && <CasesTable rows={caseRows} />}
+              {d.report && d.report.defects.length > 0 && (
+                <div className="border-t border-line px-4 py-3">
+                  <p className="mb-1 text-[11px] font-medium uppercase tracking-[0.04em] text-danger">缺陷</p>
+                  <ul className="list-disc pl-5 text-[13px] text-ink">
+                    {d.report.defects.map((x, i) => (
+                      <li key={i}>{x.desc}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </Panel>
+          )}
+          {(d.rawMessages.length > 0 || d.attachments.length > 0) && (
+            <Panel title="原始消息">
+              <div className="flex flex-col gap-1 text-[12px] leading-relaxed text-ink-2">
+                {d.rawMessages.map((m, i) => (
+                  <div key={i}>
+                    <span className="text-ink-3">
+                      {m.sender}
+                      {m.ts ? ` ${fmtDateTime(m.ts)}` : ""}{" "}
+                    </span>
+                    <span className="whitespace-pre-wrap text-ink">{m.text}</span>
+                  </div>
+                ))}
+                {d.attachments.length > 0 && (
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {d.attachments.map((a, i) => (
+                      <Chip key={i} tone="outline" title={a.mime}>
+                        <Icon name={a.mime.startsWith("image/") ? "image" : "file"} size={11} />
+                        {a.name}
+                      </Chip>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </Panel>
+          )}
+          <Panel title="流转记录" pad={false}>
+            <div className="px-4 py-1">
+              <Timeline
+                items={d.events.map((e, i) => ({
+                  time: fmtDateTime(e.at),
+                  actor: actorLabel(e.actor),
+                  note: e.note || `${STATUS_LABEL[e.from ?? ""] ?? e.from ?? ""} → ${STATUS_LABEL[e.to] ?? e.to}`,
+                  badge: e.to !== e.from ? <StatusChip status={e.to} /> : undefined,
+                  tone: /冲突|不通过|受阻|驳回/.test(e.note) ? "danger" : i === d.events.length - 1 ? "current" : "default",
+                }))}
+              />
+            </div>
+          </Panel>
+        </div>
+      </div>
     </PageShell>
   );
 }

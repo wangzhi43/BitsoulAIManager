@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { btnCls } from "@/components/ui";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -25,11 +26,7 @@ export default function LoginPage() {
         return;
       }
       const data = await res.json().catch(() => null);
-      setError(
-        data?.error?.code === "too_many_attempts"
-          ? "尝试过于频繁，请稍后再试"
-          : "用户名或密码错误",
-      );
+      setError(data?.error?.code === "too_many_attempts" ? "尝试过于频繁，请稍后再试" : "用户名或密码错误");
     } catch {
       setError("网络异常，请重试");
     } finally {
@@ -38,41 +35,27 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-[#0b1526] p-6">
-      <form
-        onSubmit={submit}
-        className="w-full max-w-sm space-y-5 rounded-2xl border border-slate-200 bg-white p-8 shadow-2xl shadow-black/30"
-      >
-        <div className="text-center">
-          <span className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 text-xl font-bold text-white">
-            B
-          </span>
-          <h1 className="text-[22px] font-bold tracking-tight text-slate-900">AI 项目平台</h1>
-          <p className="mt-1 text-[13px] text-slate-400">BitSoul PM · 多 Agent 自动化项目管理</p>
+    <main className="flex min-h-dvh items-center justify-center bg-sidebar p-6">
+      <form onSubmit={submit} className="w-full max-w-[360px] rounded-lg border border-line bg-surface p-8">
+        <div className="mb-6 flex items-center gap-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-accent text-[15px] font-bold text-white">B</span>
+          <div className="leading-tight">
+            <h1 className="text-[16px] font-semibold text-ink">BitSoul PM</h1>
+            <p className="text-[12px] text-ink-3">AI 项目管理平台 · 管理员登录</p>
+          </div>
         </div>
-        <div className="space-y-3">
-          <input
-            className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-[15px] outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-            placeholder="用户名"
-            autoComplete="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-          />
-          <input
-            className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-[15px] outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-            placeholder="密码"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
+        <div className="flex flex-col gap-3">
+          <label className="flex flex-col gap-1">
+            <span className="text-[11px] font-medium uppercase tracking-[0.04em] text-ink-3">用户名</span>
+            <input className="ctl h-9" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-[11px] font-medium uppercase tracking-[0.04em] text-ink-3">密码</span>
+            <input className="ctl h-9" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </label>
         </div>
-        {error && <p className="text-[13px] text-red-600">{error}</p>}
-        <button
-          type="submit"
-          disabled={loading || !username || !password}
-          className="w-full rounded-lg bg-blue-600 py-3 text-[15px] font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-40"
-        >
+        {error && <p className="mt-3 text-[12px] text-danger">{error}</p>}
+        <button type="submit" disabled={loading || !username || !password} className={btnCls("primary", "md", "mt-5 h-9 w-full")}>
           {loading ? "登录中…" : "登录"}
         </button>
       </form>

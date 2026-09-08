@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 // 验收 / 人工裁决：
 // - PENDING_ACCEPT → ACCEPTED（验收通过）
 // - REVIEWING → PENDING_ACCEPT（部分通过但接受）或 READY（退回重做）
+// - PENDING_ACCEPT → READY（验收退回：DevTask 回池，附原因）
 
 const Body = z.object({
   action: z.enum(["accept", "approve_partial", "send_back"]),
@@ -49,8 +50,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     return apiOk({ ok: true });
   }
 
-  if (r.status !== "REVIEWING") return apiError("conflict", `requirement is ${r.status}`);
   if (action === "approve_partial") {
+    if (r.status !== "REVIEWING") return apiError("conflict", `requirement is ${r.status}`);
     await prisma.$transaction([
       prisma.requirement.update({ where: { id }, data: { status: "PENDING_ACCEPT" } }),
       prisma.reqEvent.create({
@@ -58,14 +59,25 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       }),
     ]);
   } else {
+    // send_back：裁决退回（REVIEWING）或验收退回（PENDING_ACCEPT），均回待开发池
+    if (r.status !== "REVIEWING" && r.status !== "PENDING_ACCEPT") {
+      return apiError("conflict", `requirement is ${r.status}`);
+    }
+    const fromStatus = r.status;
     await prisma.$transaction([
       prisma.requirement.update({ where: { id }, data: { status: "READY" } }),
-      prisma.devTask.update({
+      prisma.devTask.updateMany({
         where: { requirementId: id },
         data: { status: "POOL", claimedById: null, claimedAt: null, lastHeartbeat: null, submittedAt: null },
       }),
       prisma.reqEvent.create({
-        data: { requirementId: id, fromStatus: "REVIEWING", toStatus: "READY", actor, note: note ?? "裁决退回重做" },
+        data: {
+          requirementId: id,
+          fromStatus,
+          toStatus: "READY",
+          actor,
+          note: note ?? (fromStatus === "PENDING_ACCEPT" ? "验收退回" : "裁决退回重做"),
+        },
       }),
     ]);
   }
