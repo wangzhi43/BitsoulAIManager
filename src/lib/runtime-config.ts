@@ -92,6 +92,45 @@ export async function getRuntimeConfigSnapshot(): Promise<{
   return { numbers, crons, strings, overridden: [...r.keys()] };
 }
 
+// ---------- LLM 单价表（ADR-003：写入 LlmUsageLog.costEstimate 与看板估算共用） ----------
+
+export type PriceTable = Record<string, { input: number; output: number }>;
+
+/** 解析 llmPrices：{ model: { input, output } }（每百万 token 美元），非法返回 null */
+export function parseLlmPrices(raw: string): PriceTable | null {
+  if (!raw.trim()) return null;
+  try {
+    const obj = JSON.parse(raw) as Record<string, { input?: unknown; output?: unknown }>;
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
+    const out: PriceTable = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (v && typeof v.input === "number" && typeof v.output === "number") out[k] = { input: v.input, output: v.output };
+    }
+    return Object.keys(out).length ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 精确匹配优先，其次前缀匹配（如 "claude-sonnet-5" 命中 "claude-sonnet-5-20260101"） */
+export function priceFor(prices: PriceTable, model: string): { input: number; output: number } | null {
+  if (prices[model]) return prices[model];
+  const key = Object.keys(prices).find((k) => model.startsWith(k) || k.startsWith(model));
+  return key ? prices[key] : null;
+}
+
+/** 按单价表估算一次调用成本（美元）；无单价返回 null */
+export function estimateLlmCost(prices: PriceTable | null, model: string, inputTokens: number, outputTokens: number): number | null {
+  if (!prices) return null;
+  const p = priceFor(prices, model);
+  if (!p) return null;
+  return Math.round(((inputTokens / 1e6) * p.input + (outputTokens / 1e6) * p.output) * 1e6) / 1e6;
+}
+
+export async function getLlmPrices(): Promise<PriceTable | null> {
+  return parseLlmPrices(await getRuntimeString("llmPrices"));
+}
+
 /** 认领超时毫秒数（供 API/worker 复用） */
 export async function claimTimeoutMs(): Promise<number> {
   return (await getRuntimeNumber("claimTimeoutHours")) * 3600_000;

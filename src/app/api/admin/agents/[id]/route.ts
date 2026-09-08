@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { apiError, apiOk } from "@/lib/api";
 import { currentAdmin, hashPassword } from "@/lib/auth";
+import { encryptSecret } from "@/lib/crypto";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,8 @@ const PatchBody = z.object({
   role: z.enum(["DEVELOPER", "TESTER", "BOTH"]).optional(),
   projectIds: z.array(z.string()).min(1).optional(),
   password: z.string().min(8).optional(),
+  /** GitHub PAT：传字符串更新，传空串清除（ADR-003） */
+  gitToken: z.union([z.string().min(20).max(200), z.literal("")]).optional(),
 });
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -31,6 +34,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         ...(d.role ? { role: d.role } : {}),
         ...(d.projectIds ? { projectIds: d.projectIds } : {}),
         ...(d.password ? { passwordHash: await hashPassword(d.password) } : {}),
+        ...(d.gitToken !== undefined ? { gitTokenEnc: d.gitToken ? encryptSecret(d.gitToken) : null } : {}),
       },
     }),
     // 禁用或改密时吊销全部 token

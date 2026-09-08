@@ -254,11 +254,13 @@ export default definePluginEntry({
         });
         if (!res.ok) return;
         const { items } = (await res.json()) as { items: { id: string; convId: string; content: string }[] };
-        const sentIds: string[] = [];
+        // 成功与失败都回执：平台按失败次数决定是否继续下发（ADR-003）
+        const results: { id: string; ok: boolean; error?: string }[] = [];
         for (const item of items ?? []) {
-          if (await sendViaGateway(cfg, item.convId, item.content)) sentIds.push(item.id);
+          const ok = await sendViaGateway(cfg, item.convId, item.content);
+          results.push(ok ? { id: item.id, ok: true } : { id: item.id, ok: false, error: "gateway send failed (no context token or gateway error)" });
         }
-        if (sentIds.length) await postJson(cfg, "/api/ingest/wechat/outbox/ack", { ids: sentIds });
+        if (results.length) await postJson(cfg, "/api/ingest/wechat/outbox/ack", { results });
       } catch {
         // 下轮重试
       }

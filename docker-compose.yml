@@ -18,6 +18,7 @@ services:
     volumes:
       - uploads:/data/uploads
       - repos:/data/repos
+      - builds:/data/builds
     depends_on:
       postgres:
         condition: service_healthy
@@ -40,6 +41,7 @@ services:
     volumes:
       - uploads:/data/uploads
       - repos:/data/repos
+      - builds:/data/builds
     depends_on:
       postgres:
         condition: service_healthy
@@ -73,3 +75,4 @@ volumes:
   redisdata:
   uploads:
   repos:
+  builds:

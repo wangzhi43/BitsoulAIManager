@@ -82,6 +82,14 @@ enum ExpertRole {
   TEST // 测试专家：测试任务生成
 }
 
+/// 体验包构建状态（ADR-003）
+enum BuildStatus {
+  QUEUED
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
 enum WechatCaptureMode {
   ALL // 全量采集
   MENTION // @机器人触发
@@ -106,6 +114,7 @@ model Project {
   requirements   Requirement[]
   dailyBranches  DailyBranch[]
   dailyReports   DailyReport[]
+  buildRuns      BuildRun[]
 }
 
 model AdminUser {
@@ -125,6 +134,8 @@ model AgentAccount {
   role         AgentRole
   projectIds   String[] // 可访问项目 id 列表
   enabled      Boolean   @default(true)
+  /// 该 Agent 自己的 GitHub PAT（AES-256-GCM 密文，ADR-003）；空则认领时回退全局 bot PAT
+  gitTokenEnc  String?
   createdAt    DateTime  @default(now())
   lastSeenAt   DateTime?
 
@@ -336,6 +347,10 @@ model WechatOutbox {
   content   String
   createdAt DateTime  @default(now())
   sentAt    DateTime? // Bot 取走并 ACK 后写入
+  /// 发送失败态（ADR-003）：插件上报失败累加 attempts，达到上限置 failedAt 停止下发
+  attempts  Int       @default(0)
+  lastError String?
+  failedAt  DateTime?
 
   @@index([sentAt])
 }
@@ -369,6 +384,8 @@ model LlmUsageLog {
   requirementId String?
   inputTokens   Int
   outputTokens  Int
+  /// 美元成本估算（按写入时的 llmPrices 单价表，ADR-003）；无单价为 null
+  costEstimate  Float?
   createdAt     DateTime @default(now())
 
   @@index([createdAt])
@@ -387,6 +404,30 @@ model DailyReport {
   project Project @relation(fields: [projectId], references: [id])
 
   @@unique([projectId, date])
+}
+
+/// 体验包构建（PRD #27 / ADR-003）：在 worker 内执行项目 buildCommand，产物打包到 BUILDS_DIR
+model BuildRun {
+  id             String      @id @default(cuid())
+  projectId      String
+  branch         String // daily/20260908 或 feature/REQ-12
+  command        String
+  status         BuildStatus @default(QUEUED)
+  requirementIds String[] // 本次包含的需求（展示用）
+  requestedBy    String // admin:<id>
+  log            String? // 尾部 200KB
+  artifactPath   String? // BUILDS_DIR/<id>.tar.gz
+  artifactName   String?
+  artifactSize   Int?
+  downloadToken  String      @unique @default(cuid()) // 公开下载链接令牌
+  sentTo         Json? // [{convId, at}]
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime    @default(now())
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@index([projectId, createdAt])
 }
 
 /// 操作审计（P1 #40）：关键管理操作留痕

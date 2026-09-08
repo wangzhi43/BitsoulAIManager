@@ -3,6 +3,7 @@ import { prisma } from "../db";
 import { decryptSecret } from "../crypto";
 import { logger } from "../logger";
 import type { ExpertRole } from "@prisma/client";
+import { estimateLlmCost, getLlmPrices } from "../runtime-config";
 
 // 多供应商 LLM 抽象层（TECH_DESIGN §6）。
 // 业务代码一律经由 completeForRole()，禁止直连 SDK。
@@ -184,6 +185,8 @@ export async function completeForRole(
 
   const result = await client.complete(req);
 
+  // 成本按写入时的单价表估算（ADR-003）；单价表为空则 null，看板会按当前单价补算
+  const costEstimate = estimateLlmCost(await getLlmPrices().catch(() => null), cfg.model, result.usage.inputTokens, result.usage.outputTokens);
   await prisma.llmUsageLog.create({
     data: {
       providerName: provider.name,
@@ -193,6 +196,7 @@ export async function completeForRole(
       requirementId: attribution?.requirementId,
       inputTokens: result.usage.inputTokens,
       outputTokens: result.usage.outputTokens,
+      costEstimate,
     },
   });
 

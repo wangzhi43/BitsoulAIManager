@@ -78,9 +78,10 @@ server {
 docker compose exec postgres pg_dump -U bsam bsam | gzip > /opt/backups/bsam-$(date +%F).sql.gz
 find /opt/backups -name 'bsam-*.gz' -mtime +14 -delete
 
-# 升级
+# 升级（2026-09 起含 schema 迁移与新增 builds 卷，顺序不能反：先建容器再迁移）
 cd /opt/bitsoul-pm && git pull && docker compose up -d --build \
-  && docker compose exec app npx prisma migrate deploy
+  && docker compose exec app npx prisma migrate deploy \
+  && curl -s http://127.0.0.1:3100/api/health
 ```
 
 ## 8. 端到端验收（PRD §6）

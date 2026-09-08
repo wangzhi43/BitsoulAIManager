@@ -12,6 +12,7 @@ export interface AgentRow {
   role: string;
   enabled: boolean;
   projectIds: string[];
+  hasGitToken: boolean;
   lastSeenAt: string | null;
   devCount: number;
   testCount: number;
@@ -25,7 +26,7 @@ export function AgentTable({ rows, projects, demo }: { rows: AgentRow[]; project
   const toast = useToast();
   const { run, busy } = useAction();
   const [edit, setEdit] = useState<AgentRow | null>(null);
-  const [form, setForm] = useState({ role: "DEVELOPER", projectIds: [] as string[], password: "" });
+  const [form, setForm] = useState({ role: "DEVELOPER", projectIds: [] as string[], password: "", gitToken: "", clearGitToken: false });
   const [release, setRelease] = useState<{ a: AgentRow; t: AgentRow["current"][number] } | null>(null);
   const pname = (id: string) => projects.find((p) => p.id === id)?.name ?? id;
   const guard = () => {
@@ -34,7 +35,7 @@ export function AgentTable({ rows, projects, demo }: { rows: AgentRow[]; project
   };
 
   function openEdit(a: AgentRow) {
-    setForm({ role: a.role, projectIds: a.projectIds, password: "" });
+    setForm({ role: a.role, projectIds: a.projectIds, password: "", gitToken: "", clearGitToken: false });
     setEdit(a);
   }
   async function saveEdit() {
@@ -45,13 +46,18 @@ export function AgentTable({ rows, projects, demo }: { rows: AgentRow[]; project
       if (form.password.length < 8) return toast("error", "新密码至少 8 位");
       body.password = form.password;
     }
+    if (form.clearGitToken) body.gitToken = "";
+    else if (form.gitToken.trim()) {
+      if (form.gitToken.trim().length < 20) return toast("error", "GitHub PAT 长度不对");
+      body.gitToken = form.gitToken.trim();
+    }
     const r = await run("edit", `/api/admin/agents/${edit.id}`, { method: "PATCH", body }, "已保存");
     if (r.ok) setEdit(null);
   }
 
   return (
     <>
-      <Table head={["账号", "角色", "项目范围", "当前任务", "最近活动", "完成", "状态", ""]}>
+      <Table head={["账号", "角色", "项目范围", "Git 凭据", "当前任务", "最近活动", "完成", "状态", ""]}>
         {rows.map((a) => {
           const active = a.lastSeenAt && Date.now() - new Date(a.lastSeenAt).getTime() < 3600_000;
           return (
@@ -63,6 +69,7 @@ export function AgentTable({ rows, projects, demo }: { rows: AgentRow[]; project
               <td className="max-w-[200px] truncate text-[12px] text-ink-2" title={a.projectIds.map(pname).join(", ")}>
                 {a.projectIds.map(pname).join(", ") || "—"}
               </td>
+              <td>{a.hasGitToken ? <Chip tone="green">自有 PAT</Chip> : <Chip tone="slate" title="认领时下发全局 GITHUB_BOT_PAT">共用</Chip>}</td>
               <td className="text-[12px]">
                 {a.current.length === 0 ? (
                   <span className="text-ink-3">—</span>
@@ -132,6 +139,16 @@ export function AgentTable({ rows, projects, demo }: { rows: AgentRow[]; project
             <Label>重置密码（留空不改）</Label>
             <input type="password" className="ctl" autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="至少 8 位；改密后旧 token 全部失效" />
           </label>
+          <label className="flex flex-col gap-1">
+            <Label>GitHub PAT（{edit?.hasGitToken ? "已配置，留空不改" : "未配置，认领时下发全局 bot PAT"}）</Label>
+            <input type="password" className="ctl font-mono" autoComplete="off" value={form.gitToken} disabled={form.clearGitToken} onChange={(e) => setForm({ ...form, gitToken: e.target.value })} placeholder="github_pat_… 仅授权该 Agent 可访问的仓库" />
+          </label>
+          {edit?.hasGitToken && (
+            <label className="flex items-center gap-2 text-[12px] text-ink-2">
+              <input type="checkbox" className="chk" checked={form.clearGitToken} onChange={(e) => setForm({ ...form, clearGitToken: e.target.checked })} />
+              清除已配置的 PAT（回退为全局 bot PAT）
+            </label>
+          )}
         </div>
       </Modal>
 
@@ -143,7 +160,7 @@ export function AgentTable({ rows, projects, demo }: { rows: AgentRow[]; project
 export function CreateAgentForm({ projects, demo }: { projects: { id: string; name: string }[]; demo: boolean }) {
   const toast = useToast();
   const { run, busy } = useAction();
-  const [form, setForm] = useState({ username: "", password: "", role: "DEVELOPER", projectIds: [] as string[] });
+  const [form, setForm] = useState({ username: "", password: "", role: "DEVELOPER", projectIds: [] as string[], gitToken: "" });
   const [created, setCreated] = useState<{ username: string; password: string } | null>(null);
 
   async function submit(e: React.FormEvent) {
@@ -152,10 +169,11 @@ export function CreateAgentForm({ projects, demo }: { projects: { id: string; na
     if (!/^[a-zA-Z0-9_-]{3,32}$/.test(form.username)) return toast("error", "用户名 3-32 位，字母数字 - _");
     if (form.password.length < 8) return toast("error", "密码至少 8 位");
     if (form.projectIds.length === 0) return toast("error", "至少选择一个项目");
-    const r = await run("create", "/api/admin/agents", { body: form }, "账号已创建");
+    if (form.gitToken.trim() && form.gitToken.trim().length < 20) return toast("error", "GitHub PAT 长度不对");
+    const r = await run("create", "/api/admin/agents", { body: { ...form, gitToken: form.gitToken.trim() || undefined } }, "账号已创建");
     if (r.ok) {
       setCreated({ username: form.username, password: form.password });
-      setForm({ username: "", password: "", role: "DEVELOPER", projectIds: [] });
+      setForm({ username: "", password: "", role: "DEVELOPER", projectIds: [], gitToken: "" });
     }
   }
 
@@ -206,6 +224,10 @@ export function CreateAgentForm({ projects, demo }: { projects: { id: string; na
             ))}
           </div>
         </div>
+        <label className="flex flex-col gap-1">
+          <Label>GitHub PAT（可选）</Label>
+          <input type="password" className="ctl font-mono" autoComplete="off" value={form.gitToken} onChange={(e) => setForm({ ...form, gitToken: e.target.value })} placeholder="不填则认领时下发全局 bot PAT" />
+        </label>
         <button type="submit" className={btnCls("primary", "md", "w-full")} disabled={busy === "create"}>
           <Icon name="plus" size={14} />
           创建 Agent 账号

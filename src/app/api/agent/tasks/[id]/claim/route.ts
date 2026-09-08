@@ -4,6 +4,7 @@ import { apiError, apiOk } from "@/lib/api";
 import { authenticateAgent } from "@/lib/auth";
 import { getQueues } from "@/lib/queue";
 import { config } from "@/lib/config";
+import { decryptSecret } from "@/lib/crypto";
 import { getRuntimeNumber } from "@/lib/runtime-config";
 
 export const dynamic = "force-dynamic";
@@ -63,9 +64,12 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       repoUrl: devTask.requirement.project!.repoUrl,
       featureBranch,
       note: "分支正在创建（约 1 分钟内可用）；push 权限凭据见 credentials",
-      credentials: config.githubBotPat
-        ? { kind: "github_pat", token: config.githubBotPat }
-        : { kind: "none", token: null },
+      // 优先下发本 Agent 自己的 PAT（ADR-003），未配置回退全局 bot PAT
+      credentials: agent.gitTokenEnc
+        ? { kind: "github_pat", token: decryptSecret(agent.gitTokenEnc) }
+        : config.githubBotPat
+          ? { kind: "shared_bot_pat", token: config.githubBotPat }
+          : { kind: "none", token: null },
       heartbeatEveryMinutes: 10,
       claimTimeoutHours: await getRuntimeNumber("claimTimeoutHours"),
     });

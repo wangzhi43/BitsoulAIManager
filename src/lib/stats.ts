@@ -1,6 +1,6 @@
 import { prisma } from "./db";
 import { getQueueDepths } from "./queue";
-import { getRuntimeNumber, getRuntimeString } from "./runtime-config";
+import { getRuntimeNumber, getRuntimeString, parseLlmPrices, priceFor } from "./runtime-config";
 
 // 看板统计聚合（真实数据路径）。演示模式的对应数据在 demo.ts 的 DEMO_STATS。
 // 2026-09 扩展：待办直达数字、昨日对比、项目状态表、在线 Agent、LLM 成本估算、系统状态（UI_REDESIGN §3）。
@@ -79,29 +79,6 @@ function lastNDays(n: number): string[] {
   return Array.from({ length: n }, (_, i) => dayKey(new Date(Date.now() - (n - 1 - i) * 86400_000)));
 }
 
-/** 解析 llmPrices：{ model: { input, output } }，非法返回 null */
-function parsePrices(raw: string): Record<string, { input: number; output: number }> | null {
-  if (!raw.trim()) return null;
-  try {
-    const obj = JSON.parse(raw) as Record<string, { input?: unknown; output?: unknown }>;
-    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
-    const out: Record<string, { input: number; output: number }> = {};
-    for (const [k, v] of Object.entries(obj)) {
-      if (v && typeof v.input === "number" && typeof v.output === "number") out[k] = { input: v.input, output: v.output };
-    }
-    return Object.keys(out).length ? out : null;
-  } catch {
-    return null;
-  }
-}
-
-/** 精确匹配优先，其次前缀匹配（如 "claude-sonnet-4" 命中 "claude-sonnet-4-20250514"） */
-function priceFor(prices: Record<string, { input: number; output: number }>, model: string) {
-  if (prices[model]) return prices[model];
-  const key = Object.keys(prices).find((k) => model.startsWith(k) || k.startsWith(model));
-  return key ? prices[key] : null;
-}
-
 /** redis 不可用时 ioredis 会无限重试，这里加超时避免拖住整页 */
 async function safeQueueDepths(): Promise<{ llm: number; git: number; failed: number } | null> {
   try {
@@ -161,7 +138,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     }),
     prisma.llmUsageLog.findMany({
       where: { createdAt: { gte: since7 } },
-      select: { createdAt: true, inputTokens: true, outputTokens: true, expertRole: true, model: true },
+      select: { createdAt: true, inputTokens: true, outputTokens: true, expertRole: true, model: true, costEstimate: true },
     }),
     prisma.reqEvent.findMany({
       include: { requirement: { select: { seq: true, title: true } } },
@@ -236,8 +213,9 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   const days7 = lastNDays(7);
   const llmByDay = new Map(days7.map((d) => [d, 0]));
   const llmByRole = new Map<string, number>();
-  const prices = parsePrices(pricesRaw);
+  const prices = parseLlmPrices(pricesRaw);
   let cost7d = 0;
+  let hasCost = false;
   let llmTodayTokens = 0;
   for (const l of llmLogs) {
     const k = dayKey(l.createdAt);
@@ -246,9 +224,16 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     const role = l.expertRole ?? "其他";
     llmByRole.set(role, (llmByRole.get(role) ?? 0) + t);
     if (l.createdAt >= todayStart) llmTodayTokens += t;
-    if (prices) {
+    // 入库成本优先（ADR-003）；历史无成本的行按当前单价补算
+    if (l.costEstimate != null) {
+      cost7d += l.costEstimate;
+      hasCost = true;
+    } else if (prices) {
       const p = priceFor(prices, l.model);
-      if (p) cost7d += (l.inputTokens / 1e6) * p.input + (l.outputTokens / 1e6) * p.output;
+      if (p) {
+        cost7d += (l.inputTokens / 1e6) * p.input + (l.outputTokens / 1e6) * p.output;
+        hasCost = true;
+      }
     }
   }
 
@@ -390,7 +375,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
         };
       })
       .sort((x, y) => (y.lastSeenAt?.getTime() ?? 0) - (x.lastSeenAt?.getTime() ?? 0)),
-    llmCost7d: prices ? Math.round(cost7d * 100) / 100 : null,
+    llmCost7d: hasCost ? Math.round(cost7d * 100) / 100 : null,
     llmTodayTokens,
     llmLimit,
     system: {

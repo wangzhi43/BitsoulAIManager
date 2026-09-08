@@ -20,6 +20,7 @@ import { rankPool } from "../src/lib/experts/pm";
 import { genTestTasks } from "../src/lib/experts/test";
 import { generateDailyReport } from "../src/lib/experts/report";
 import { applyClarification } from "../src/lib/experts/clarify";
+import { runBuild } from "../src/lib/build";
 import {
   createDailyBranch,
   createFeatureBranch,
@@ -325,6 +326,10 @@ const gitWorker = new Worker<GitJob>(
         await enqueueRefreshSummary(req.dailyBranchId);
         return;
       }
+      case "run-build":
+        // 体验包构建（ADR-003）：与其它 git 操作同队列串行，避免构建期间仓库被切分支
+        await runBuild(job.data.buildRunId);
+        return;
       case "fetch-repos": {
         const projects = await prisma.project.findMany({ where: { active: true } });
         for (const p of projects) {

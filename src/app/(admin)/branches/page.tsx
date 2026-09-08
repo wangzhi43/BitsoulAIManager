@@ -4,6 +4,7 @@ import { dailyBranchName } from "@/lib/git";
 import { parseBranchSummary, type BranchSummary } from "@/lib/branch-summary";
 import { PageShell, PageHeader, DemoNote } from "@/components/ui";
 import { ReviewCenter, RefreshDiffButton, type BranchOption, type BranchDetail, type ReqRow } from "./ui";
+import type { BuildsProps } from "./builds";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,7 @@ export default async function BranchesPage({ searchParams }: { searchParams: Pro
   let options: BranchOption[];
   let detail: BranchDetail | null = null;
   let missingToday: { id: string; name: string }[] = [];
+  let builds: BuildsProps | null = null;
 
   if (demo) {
     const today = `daily/${new Date().toISOString().slice(0, 10).replace(/-/g, "")}`;
@@ -32,6 +34,16 @@ export default async function BranchesPage({ searchParams }: { searchParams: Pro
         { sha: "3b2a7c1", message: "docs: update dev-log.md", author: "bitsoul-pm-bot", date: new Date(Date.now() - 3.5 * 3600_000).toISOString(), reqSeq: null },
       ],
       perRequirement: sel.requirements.map((r, i) => ({ seq: r.seq, featureBranch: `feature/REQ-${r.seq}`, mergeSha: r.conflict ? null : `m${r.seq}f${i}`, files: r.conflict ? 0 : 4 - i, insertions: r.conflict ? 0 : 182 - i * 70, deletions: r.conflict ? 0 : 23 - i * 7, changedFiles: r.conflict ? [] : ["src/app/customers/page.tsx", "src/lib/api.ts"] })),
+    };
+    builds = {
+      projectId: "demo-p1",
+      projectName: sel.project,
+      branch: sel.name,
+      buildCommand: "npm ci && npm run build && cp -r dist $BUILD_OUT/",
+      builds: [{ id: "demo-build-1", status: "SUCCESS", branch: sel.name, createdAt: new Date(Date.now() - 3600_000).toISOString(), finishedAt: new Date(Date.now() - 3000_000).toISOString(), artifactName: `${sel.project}-${sel.name.replace("/", "_")}-e7f3a9b.tar.gz`, artifactSize: 18_400_000, hasArtifact: true, requirementSeqs: [95, 96], sentTo: [] }],
+      requirementIds: sel.requirements.map((r) => r.id),
+      bindings: [{ convId: "wxid_demo_88", convName: "王总（民生理财）", customerName: "民生理财" }],
+      demo: true,
     };
     detail = {
       id: sel.id,
@@ -76,6 +88,32 @@ export default async function BranchesPage({ searchParams }: { searchParams: Pro
         },
         orderBy: { seq: "asc" },
       });
+      const [runs, bindings] = await Promise.all([
+        prisma.buildRun.findMany({ where: { projectId: sel.projectId, branch: sel.name }, orderBy: { createdAt: "desc" }, take: 10 }),
+        prisma.wechatBinding.findMany({ where: { paused: false, OR: [{ projectId: sel.projectId }, { projectId: null }] }, select: { convId: true, convName: true, customerName: true } }),
+      ]);
+      const seqById = new Map(reqs.map((r) => [r.id, r.seq]));
+      builds = {
+        projectId: sel.projectId,
+        projectName: sel.project.name,
+        branch: sel.name,
+        buildCommand: (await prisma.project.findUnique({ where: { id: sel.projectId }, select: { buildCommand: true } }))?.buildCommand ?? null,
+        builds: runs.map((b) => ({
+          id: b.id,
+          status: b.status,
+          branch: b.branch,
+          createdAt: b.createdAt.toISOString(),
+          finishedAt: b.finishedAt?.toISOString() ?? null,
+          artifactName: b.artifactName,
+          artifactSize: b.artifactSize,
+          hasArtifact: !!b.artifactPath,
+          requirementSeqs: b.requirementIds.map((id) => seqById.get(id)).filter((x): x is number => x != null),
+          sentTo: ((b.sentTo as { convId: string; at: string }[] | null) ?? []),
+        })),
+        requirementIds: reqs.filter((r) => r.devTask?.status === "MERGED").map((r) => r.id),
+        bindings,
+        demo: false,
+      };
       detail = {
         id: sel.id,
         project: sel.project.name,
@@ -108,7 +146,7 @@ export default async function BranchesPage({ searchParams }: { searchParams: Pro
     <PageShell>
       <PageHeader title="分支审查" subtitle="每晚：核对变更 → 验收 → 合并 main" actions={detail && <RefreshDiffButton branchId={detail.id} demo={demo} />} />
       {demo && <DemoNote />}
-      <ReviewCenter options={options} detail={detail} missingToday={missingToday} demo={demo} />
+      <ReviewCenter options={options} detail={detail} missingToday={missingToday} demo={demo} builds={builds} />
     </PageShell>
   );
 }

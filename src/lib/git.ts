@@ -22,7 +22,7 @@ import {
 // 约定：每个会改动工作区的操作先 checkoutFresh（中止残留的 merge/revert/cherry-pick + reset --hard），
 // 失败路径一律 abort + cleanWorkingTree，保证 clone 永远不会停在脏状态。
 
-const REPOS_DIR = process.env.REPOS_DIR || "/data/repos";
+export const REPOS_DIR = process.env.REPOS_DIR || "/data/repos";
 /** 提交日志字段分隔符（%s 里可能出现 "|"，用不可打印的 US 更稳） */
 const SEP = "\x1f";
 /** 单次读取 daily 范围提交的上限 */
@@ -38,7 +38,7 @@ export function authenticatedUrl(repoUrl: string): string {
   return httpsUrl.replace(/^https:\/\//, `https://x-access-token:${pat}@`);
 }
 
-async function ensureRepo(project: Project): Promise<SimpleGit> {
+export async function ensureRepo(project: Project): Promise<SimpleGit> {
   const dir = path.join(REPOS_DIR, project.name);
   const url = authenticatedUrl(project.repoUrl);
   let exists = false;

@@ -100,6 +100,26 @@ async function main() {
   const pub = await call("GET", "/api/public/submit?token=wrong-token");
   log(pub.status === 200 && pub.data?.ok === false, "公开表单错误令牌 → ok:false");
 
+  // ADR-003：体验包 / 发送队列 / Agent 凭据
+  const builds = await call("GET", "/api/admin/builds");
+  log(builds.status === 200 && Array.isArray(builds.data?.builds), "体验包列表");
+  const noCmd = ((projects.data?.projects as { id: string; buildCommand: string | null }[] | undefined) ?? []).find((p) => !p.buildCommand);
+  if (noCmd) {
+    const b = await call("POST", "/api/admin/builds", { projectId: noCmd.id, branch: "main" });
+    log(b.status === 409, "未配置构建命令时发起构建 → 409");
+  } else log(true, "构建校验（跳过：所有项目都配置了命令）");
+  const pubBuild = await call("GET", "/api/public/builds/nonexistent?token=x");
+  log(pubBuild.status === 404, "公开下载错误令牌 → 404");
+  const ob = await call("GET", "/api/admin/wechat-outbox");
+  log(ob.status === 200 && Array.isArray(ob.data?.pending) && Array.isArray(ob.data?.failed), "微信发送队列");
+  const agentsRes = await call("GET", "/api/admin/agents");
+  const agentsList = (agentsRes.data?.agents as { id: string; hasGitToken: boolean }[] | undefined) ?? [];
+  log(agentsRes.status === 200 && agentsList.every((a) => typeof a.hasGitToken === "boolean"), "Agent 列表含 hasGitToken");
+  if (agentsList[0]) {
+    const badTok = await call("PATCH", `/api/admin/agents/${agentsList[0].id}`, { gitToken: "short" });
+    log(badTok.status === 400, "过短 PAT 被拒绝");
+  }
+
   const health = await call("GET", "/api/health");
   log(health.status === 200 && health.data?.ok === true, "健康检查");
 

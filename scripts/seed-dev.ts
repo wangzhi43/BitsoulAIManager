@@ -25,7 +25,8 @@ const dailyName = (n: number) => {
 };
 
 async function cleanup() {
-  const old = await prisma.requirement.findMany({ where: { title: { startsWith: MARK } }, select: { id: true } });
+  // 标题带标记的样例单 + 挂在样例线索下的派生单（如冒烟测试拆分出的新单）一并清理
+  const old = await prisma.requirement.findMany({ where: { OR: [{ title: { startsWith: MARK } }, { source: { threadId: { startsWith: THREAD_PREFIX } } }] }, select: { id: true } });
   if (old.length) await prisma.requirement.deleteMany({ where: { id: { in: old.map((r) => r.id) } } });
   await prisma.requirementSource.deleteMany({ where: { threadId: { startsWith: THREAD_PREFIX } } });
   await prisma.inboxMessage.deleteMany({ where: { msgId: { startsWith: THREAD_PREFIX } } });
@@ -35,6 +36,7 @@ async function cleanup() {
   await prisma.llmUsageLog.deleteMany({ where: { providerName: "deepseek-dev" } });
   await prisma.dailyReport.deleteMany({ where: { content: { path: ["seed"], equals: true } } });
   await prisma.auditLog.deleteMany({ where: { detail: { startsWith: MARK } } });
+  await prisma.buildRun.deleteMany({ where: { requestedBy: "admin:seed" } });
 }
 
 interface ReqSpec {
@@ -101,8 +103,8 @@ async function main() {
   for (const u of AGENTS) {
     const a = await prisma.agentAccount.upsert({
       where: { username: u },
-      update: { enabled: true, lastSeenAt: u === "dev-agent-2" ? h(5) : h(0.05) },
-      create: { username: u, passwordHash: pw, role: u.startsWith("test") ? "TESTER" : "DEVELOPER", projectIds: projects.map((p) => p.id), lastSeenAt: h(0.05) },
+      update: { enabled: true, lastSeenAt: u === "dev-agent-2" ? h(5) : h(0.05), gitTokenEnc: u === "dev-agent-1" ? encryptSecret("github_pat_seed_placeholder_token_000000") : null },
+      create: { username: u, passwordHash: pw, role: u.startsWith("test") ? "TESTER" : "DEVELOPER", projectIds: projects.map((p) => p.id), lastSeenAt: h(0.05), gitTokenEnc: u === "dev-agent-1" ? encryptSecret("github_pat_seed_placeholder_token_000000") : null },
     });
     agentMap.set(u, a.id);
   }
@@ -274,6 +276,15 @@ async function main() {
       });
     }
   }
+  // 体验包样例（ADR-003）：一次成功（无产物文件，仅记录）与一次失败
+  const p0 = projects[0];
+  await prisma.project.update({ where: { id: p0.id }, data: { buildCommand: p0.buildCommand ?? "npm ci && npm run build && cp -r dist $BUILD_OUT/" } });
+  await prisma.buildRun.createMany({
+    data: [
+      { projectId: p0.id, branch: dailyName(0), command: "npm ci && npm run build && cp -r dist $BUILD_OUT/", status: "FAILED", requirementIds: [], requestedBy: "admin:seed", log: "$ npm ci\nnpm ERR! code E404\nnpm ERR! 404 Not Found - GET https://registry.npmjs.org/xxx\n[样例] 构建失败示例", startedAt: h(5), finishedAt: h(4.9), createdAt: h(5.1) },
+      { projectId: p0.id, branch: dailyName(1), command: "npm ci && npm run build && cp -r dist $BUILD_OUT/", status: "SUCCESS", requirementIds: created.filter((c) => c.projectId === p0.id && c.spec.status === "ACCEPTED").map((c) => c.id), requestedBy: "admin:seed", log: "$ npm ci\nadded 412 packages\n$ npm run build\n✓ built in 41s\n产物 BitSoulClaw-daily-a1b2c3d.tar.gz（18.4 MB）", artifactName: "BitSoulClaw-daily-a1b2c3d.tar.gz", artifactSize: 18_400_000, startedAt: h(30), finishedAt: h(29.5), createdAt: h(30.1) },
+    ],
+  });
   await prisma.auditLog.createMany({
     data: [
       { actor: "admin:seed", action: "confirm-requirement", target: `REQ-${created[4].seq}`, detail: `${MARK}确认入池`, createdAt: h(30) },

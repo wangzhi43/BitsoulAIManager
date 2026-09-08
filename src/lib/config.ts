@@ -29,6 +29,10 @@ export const config = {
   aggregationWindowMinutes: Number(process.env.AGG_WINDOW_MINUTES || 30),
   /** 认领心跳超时（小时） */
   claimTimeoutHours: Number(process.env.CLAIM_TIMEOUT_HOURS || 4),
+  /** 体验包产物目录（ADR-003） */
+  buildsDir: process.env.BUILDS_DIR || "/data/builds",
+  /** 体验包构建超时（分钟） */
+  buildTimeoutMinutes: Number(process.env.BUILD_TIMEOUT_MINUTES || 30),
   adminJwtHours: 12,
   agentTokenDays: 7,
 };

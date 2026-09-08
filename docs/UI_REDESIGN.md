@@ -65,14 +65,14 @@
 | — | 管理员强制释放认领 | 缺 | `POST /api/admin/tasks/[id]/release` |
 | — | 本地验证数据 | 无 | `scripts/seed-dev.ts`（仅非生产环境）生成各状态样例，供截图与冒烟 |
 
-### 2.2 需要数据库 schema 变更，待管理员批准后再做（红线：schema 变更必须先问）
+### 2.2 schema 变更项（2026-09-08 管理员批准，已完成，见 ADR-003）
 
-| # | 功能 | 需要的变更 |
-|---|---|---|
-| 27 | 构建打包 + 体验包发客户 | 新表 `BuildRun`（项目、分支、命令、日志、产物路径、状态） |
-| — | 每 Agent 独立 git 凭据（TECH_DESIGN §10） | `AgentAccount.gitTokenEnc`；当前认领响应下发全局 bot PAT |
-| — | LLM 成本精确入库 | `LlmUsageLog.costEstimate`（本次先用单价表在展示层估算） |
-| — | 微信发送失败态 | `WechatOutbox.failedAt / error` |
+| # | 功能 | 变更 | 落地 |
+|---|---|---|---|
+| 27 | 构建打包 + 体验包发客户 | 新表 `BuildRun` + `BuildStatus` | worker `run-build`（$BUILD_OUT 约定 → tar.gz）；分支审查页「体验包」面板：构建 / 日志 / 下载 / 发给客户；公开带令牌下载 `/api/public/builds/:id?token=` |
+| — | 每 Agent 独立 git 凭据 | `AgentAccount.gitTokenEnc` | 智能体页录入 / 清除 PAT；认领响应优先下发本 Agent 凭据，未配置回退全局（`kind: shared_bot_pat`） |
+| — | LLM 成本精确入库 | `LlmUsageLog.costEstimate` | `completeForRole` 按单价表写入；工作台成本优先累加入库值 |
+| — | 微信发送失败态 | `WechatOutbox.attempts / lastError / failedAt` | 插件 ack 上报失败，5 次后停发；设置页「发送队列」可重试 / 丢弃 |
 
 ### 2.3 后置（P2，PRD 已标）
 

@@ -20,6 +20,8 @@ interface FingerprintRow {
   test_task: Date | null;
   requirement: Date | null;
   inbox_pending: bigint | number;
+  build: Date | null;
+  build_count: bigint | number;
 }
 
 async function fingerprint(): Promise<string> {
@@ -30,12 +32,14 @@ async function fingerprint(): Promise<string> {
       (SELECT MAX("updatedAt") FROM "DevTask") AS dev_task,
       (SELECT MAX("updatedAt") FROM "TestTask") AS test_task,
       (SELECT MAX("updatedAt") FROM "Requirement") AS requirement,
-      (SELECT COUNT(*) FROM "InboxMessage" WHERE "threadedAt" IS NULL) AS inbox_pending
+      (SELECT COUNT(*) FROM "InboxMessage" WHERE "threadedAt" IS NULL) AS inbox_pending,
+      (SELECT MAX(COALESCE("finishedAt", "startedAt", "createdAt")) FROM "BuildRun") AS build,
+      (SELECT COUNT(*) FROM "BuildRun") AS build_count
   `);
   const r = rows[0];
   if (!r) return "";
   const t = (d: Date | null) => (d ? d.getTime() : 0);
-  return [t(r.req_event), t(r.audit), t(r.dev_task), t(r.test_task), t(r.requirement), String(r.inbox_pending)].join("|");
+  return [t(r.req_event), t(r.audit), t(r.dev_task), t(r.test_task), t(r.requirement), String(r.inbox_pending), t(r.build), String(r.build_count)].join("|");
 }
 
 export async function GET(req: NextRequest) {

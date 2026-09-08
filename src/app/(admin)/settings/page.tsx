@@ -24,7 +24,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const { tab: tabParam } = await searchParams;
   const tab: TabKey = (TABS.find((t) => t.key === tabParam)?.key ?? "projects") as TabKey;
 
-  const [projects, providers, roleConfigs, bindings, botSeen, auditLogs, reqCounts, branchCounts] = await Promise.all([
+  const [projects, providers, roleConfigs, bindings, botSeen, auditLogs, reqCounts, branchCounts, outboxPending, outboxFailed] = await Promise.all([
     prisma.project.findMany({ orderBy: { createdAt: "asc" } }),
     prisma.llmProvider.findMany({ orderBy: { createdAt: "asc" } }),
     prisma.agentRoleModelConfig.findMany(),
@@ -33,6 +33,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     tab === "audit" ? prisma.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 100 }) : Promise.resolve([]),
     prisma.requirement.groupBy({ by: ["projectId"], _count: true }),
     prisma.dailyBranch.groupBy({ by: ["projectId"], _count: true }),
+    tab === "wechat" ? prisma.wechatOutbox.findMany({ where: { sentAt: null, failedAt: null }, orderBy: { createdAt: "asc" }, take: 30 }) : Promise.resolve([]),
+    tab === "wechat" ? prisma.wechatOutbox.findMany({ where: { sentAt: null, failedAt: { not: null } }, orderBy: { failedAt: "desc" }, take: 30 }) : Promise.resolve([]),
   ]);
   const reqCount = new Map(reqCounts.map((r) => [r.projectId, r._count]));
   const branchCount = new Map(branchCounts.map((b) => [b.projectId, b._count]));
@@ -76,6 +78,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
               bindings={bindings.map((b) => ({ id: b.id, convId: b.convId, convName: b.convName, projectId: b.projectId, customerName: b.customerName, captureMode: b.captureMode, paused: b.paused, pushDailyReport: b.pushDailyReport, createdAt: b.createdAt.toISOString() }))}
               projects={projectViews.filter((p) => p.active).map((p) => ({ id: p.id, name: p.name }))}
               botLastSeen={botSeen?.value ?? null}
+              outbox={{
+                pending: outboxPending.map((o) => ({ id: o.id, convId: o.convId, content: o.content, createdAt: o.createdAt.toISOString(), attempts: o.attempts, lastError: o.lastError })),
+                failed: outboxFailed.map((o) => ({ id: o.id, convId: o.convId, content: o.content, createdAt: o.createdAt.toISOString(), attempts: o.attempts, lastError: o.lastError })),
+              }}
             />
           )}
           {tab === "system" && <SystemTab />}

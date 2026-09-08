@@ -164,6 +164,7 @@ model AgentAccount {
   enabled    Boolean @default(true)
   tokens     AgentToken[]      // 登录签发，可吊销
   stats      Json?             // 看板缓存
+  gitTokenEnc String?          // 每 Agent 独立 GitHub PAT（ADR-003），空则回退全局 bot PAT
 }
 
 model LlmProvider {
@@ -192,10 +193,11 @@ model LlmUsageLog {            // 成本追踪
   requirementId String?
   inputTokens  Int
   outputTokens Int
-  costEstimate Decimal?
+  costEstimate Float?          // 美元，写入时按 llmPrices 单价表计算（ADR-003）
   createdAt DateTime @default(now())
 }
 
+model BuildRun { ... }         // 体验包构建（ADR-003）：分支、命令、状态、日志尾部、产物路径、公开下载令牌、已发送会话
 model WechatBinding { ... }    // 微信会话 ↔ 项目/客户绑定 + 采集模式
 model SystemConfig { ... }     // 键值配置：聚合窗口、定时时间、超时阈值、日消耗上限
 model AdminUser { ... }
@@ -264,6 +266,9 @@ model Attachment { ... }       // 文件统一存本地卷 /data/uploads，记 h
 | GET/PUT | `/api/admin/system-config`、POST `.../web-form-token` | 运行参数 / cron / 单价表 / Web 表单令牌（`src/lib/runtime-config.ts` 读取，60 秒缓存） |
 | GET/POST | `/api/public/submit` + 页面 `/submit?token=` | Web 表单入口（PRD #10） |
 | GET | `/api/events` | SSE |
+| GET/POST | `/api/admin/builds`、GET `/api/admin/builds/:id`、POST `.../send`、GET `.../artifact` | 体验包构建 / 详情日志 / 发给客户 / 管理员下载（ADR-003） |
+| GET | `/api/public/builds/:id?token=` | 客户免登录下载体验包 |
+| GET/POST | `/api/admin/wechat-outbox` | 微信发送队列：待发 / 失败列表，重试 / 丢弃 |
 
 ---
 

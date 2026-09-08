@@ -19,12 +19,23 @@ interface Binding {
   createdAt: string;
 }
 
-export function WechatTab({ bindings, projects, botLastSeen }: { bindings: Binding[]; projects: { id: string; name: string }[]; botLastSeen: string | null }) {
+interface OutboxItem {
+  id: string;
+  convId: string;
+  content: string;
+  createdAt: string;
+  attempts: number;
+  lastError: string | null;
+}
+
+export function WechatTab({ bindings, projects, botLastSeen, outbox }: { bindings: Binding[]; projects: { id: string; name: string }[]; botLastSeen: string | null; outbox: { pending: OutboxItem[]; failed: OutboxItem[] } }) {
   const toast = useToast();
   const { run, busy } = useAction();
   const [nb, setNb] = useState({ convId: "", convName: "", projectId: "", customerName: "" });
   const healthy = !!botLastSeen && Date.now() - new Date(botLastSeen).getTime() < 5 * 60_000;
   const patch = (b: Binding, body: unknown, ok?: string) => run(`p-${b.id}`, `/api/admin/wechat-bindings/${b.id}`, { method: "PATCH", body }, ok);
+  const convName = (id: string) => bindings.find((b) => b.convId === id)?.convName ?? id;
+  const outboxAct = (item: OutboxItem, action: "retry" | "discard") => run(`ob-${item.id}`, "/api/admin/wechat-outbox", { body: { id: item.id, action } }, action === "retry" ? "已重新排队" : "已丢弃");
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -127,6 +138,34 @@ export function WechatTab({ bindings, projects, botLastSeen }: { bindings: Bindi
             </button>
           </div>
         </form>
+      </Panel>
+
+      <Panel title="发送队列" pad={false} extra={<span className="num text-[12px] text-ink-3">待发 {outbox.pending.length} · 失败 {outbox.failed.length}</span>}>
+        <Table head={["状态", "会话", "内容", "创建", "尝试", "错误", ""]} dense>
+          {[...outbox.failed.map((o) => ({ o, failed: true })), ...outbox.pending.map((o) => ({ o, failed: false }))].map(({ o, failed }) => (
+            <tr key={o.id}>
+              <td>{failed ? <Chip tone="red">已停发</Chip> : o.attempts > 0 ? <Chip tone="amber">重试中</Chip> : <Chip tone="slate">待发</Chip>}</td>
+              <td className="max-w-[160px] truncate text-[12px] text-ink">{convName(o.convId)}</td>
+              <td className="max-w-[320px] truncate text-[12px] text-ink-2" title={o.content}>{o.content}</td>
+              <td className="num whitespace-nowrap text-[12px] text-ink-3">{ago(o.createdAt)}</td>
+              <td className="num text-[12px] text-ink-2">{o.attempts}</td>
+              <td className="max-w-[220px] truncate text-[12px] text-danger" title={o.lastError ?? undefined}>{o.lastError ?? "—"}</td>
+              <td className="text-right">
+                <span className="flex justify-end gap-1">
+                  {failed && (
+                    <button className={btnCls("ghost", "sm")} disabled={busy === `ob-${o.id}`} onClick={() => outboxAct(o, "retry")}>
+                      重试
+                    </button>
+                  )}
+                  <button className={btnCls("ghost", "sm", "text-danger")} disabled={busy === `ob-${o.id}`} onClick={() => outboxAct(o, "discard")}>
+                    丢弃
+                  </button>
+                </span>
+              </td>
+            </tr>
+          ))}
+          {outbox.pending.length + outbox.failed.length === 0 && <EmptyRow colSpan={7}>队列为空。日报推送、澄清文案、冲突告警、体验包链接都会经这里由机器人回发。</EmptyRow>}
+        </Table>
       </Panel>
     </>
   );

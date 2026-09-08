@@ -8,6 +8,7 @@ import { Panel, KpiRow, KpiTile, Table, EmptyRow, Chip, EmptyState, Notice, Labe
 import { StatusChip } from "@/components/status";
 import { Icon } from "@/components/icons";
 import { ConfirmDialog, useAction, useToast } from "@/components/ui-client";
+import { BuildsPanel, type BuildsProps } from "./builds";
 
 export interface BranchOption {
   id: string;
@@ -64,7 +65,7 @@ function ReportChip({ r }: { r: ReqRow["report"] }) {
   return <Chip tone="red">{r.conclusion} {pct}%</Chip>;
 }
 
-export function ReviewCenter({ options, detail, missingToday, demo }: { options: BranchOption[]; detail: BranchDetail | null; missingToday: { id: string; name: string }[]; demo: boolean }) {
+export function ReviewCenter({ options, detail, missingToday, demo, builds }: { options: BranchOption[]; detail: BranchDetail | null; missingToday: { id: string; name: string }[]; demo: boolean; builds?: BuildsProps | null }) {
   const router = useRouter();
   const toast = useToast();
   const { run, busy } = useAction();
@@ -321,6 +322,8 @@ export function ReviewCenter({ options, detail, missingToday, demo }: { options:
               </>
             )}
           </Panel>
+
+          {builds && <BuildsPanel {...builds} />}
 
           {c.conflicts.length > 0 && (
             <Panel title="冲突处理">

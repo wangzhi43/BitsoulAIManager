@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { apiError, apiOk } from "@/lib/api";
 import { currentAdmin, hashPassword } from "@/lib/auth";
+import { encryptSecret } from "@/lib/crypto";
 import { audit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -17,11 +18,12 @@ export async function GET() {
       projectIds: true,
       enabled: true,
       lastSeenAt: true,
+      gitTokenEnc: true,
       _count: { select: { devTasks: true, testTasks: true } },
     },
     orderBy: { createdAt: "asc" },
   });
-  return apiOk({ agents });
+  return apiOk({ agents: agents.map(({ gitTokenEnc, ...a }) => ({ ...a, hasGitToken: !!gitTokenEnc })) });
 }
 
 const CreateBody = z.object({
@@ -29,6 +31,8 @@ const CreateBody = z.object({
   password: z.string().min(8),
   role: z.enum(["DEVELOPER", "TESTER", "BOTH"]),
   projectIds: z.array(z.string()).min(1),
+  /** 该 Agent 自己的 GitHub PAT（可选，ADR-003） */
+  gitToken: z.string().min(20).max(200).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -49,6 +53,7 @@ export async function POST(req: NextRequest) {
       passwordHash: await hashPassword(d.password),
       role: d.role,
       projectIds: d.projectIds,
+      gitTokenEnc: d.gitToken ? encryptSecret(d.gitToken) : null,
     },
   });
   const adminUser = await currentAdmin();

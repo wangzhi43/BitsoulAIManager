@@ -29,7 +29,9 @@ export type GitJob =
   /** 单需求 cherry-pick 到 main（PRD #26） */
   | { kind: "cherry-pick-to-main"; requirementId: string }
   /** 所有活跃项目仓库增量 fetch（TECH_DESIGN §8 每 5 分钟） */
-  | { kind: "fetch-repos" };
+  | { kind: "fetch-repos" }
+  /** 体验包构建（ADR-003）：在服务端 clone 上执行 buildCommand 并打包 $BUILD_OUT */
+  | { kind: "run-build"; buildRunId: string };
 
 /** cron 队列的 job name 列表（worker 注册；时间可在 SystemConfig 覆盖） */
 export const CRON_NAMES = [

@@ -132,7 +132,7 @@ export function ProjectsTab({ projects }: { projects: ProjectView[] }) {
           <label className="flex flex-col gap-1"><Label>主分支</Label><input className="ctl font-mono" value={form.mainBranch} onChange={(e) => setForm({ ...form, mainBranch: e.target.value })} /></label>
           <label className="flex flex-col gap-1 sm:col-span-2"><Label>仓库地址</Label><input className="ctl font-mono" value={form.repoUrl} onChange={(e) => setForm({ ...form, repoUrl: e.target.value })} /></label>
           <label className="flex flex-col gap-1"><Label>docs 目录</Label><input className="ctl font-mono" value={form.docsDir} onChange={(e) => setForm({ ...form, docsDir: e.target.value })} /></label>
-          <label className="flex flex-col gap-1"><Label>构建命令（体验包，待接入）</Label><input className="ctl font-mono" value={form.buildCommand} onChange={(e) => setForm({ ...form, buildCommand: e.target.value })} placeholder="npm run build" /></label>
+          <label className="flex flex-col gap-1"><Label>体验包构建命令</Label><input className="ctl font-mono" value={form.buildCommand} onChange={(e) => setForm({ ...form, buildCommand: e.target.value })} placeholder="npm ci && npm run build && cp -r dist $BUILD_OUT/" /><span className="text-[11px] text-ink-3">在 worker 容器内、仓库根目录执行；产物须写到 $BUILD_OUT 目录，平台打包为 tar.gz 供下载</span></label>
           <label className="flex flex-col gap-1 sm:col-span-2"><Label>描述</Label><textarea className="ctl" rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
         </div>
       </Modal>

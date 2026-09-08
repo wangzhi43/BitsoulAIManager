@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   }
 
   const items = await prisma.wechatOutbox.findMany({
-    where: { sentAt: null },
+    where: { sentAt: null, failedAt: null }, // 达到失败上限的不再下发（ADR-003）
     orderBy: { createdAt: "asc" },
     take: 20,
   });

@@ -13,8 +13,15 @@
 - [x] 后端补齐：split / retry-merge / exclude / cherry-pick / branches(+refresh, merge 门槛) / pools/rank / tasks/release / reports(+generate) / system-config(运行参数+cron+单价表+Web 表单令牌) / public submit / SSE events / runtime-config / clarify 回填 / cron(fetch-repos, bot-heartbeat-check, reload-cron) / readRepoFile 读 daily / agent-cli.sh
 - [x] 自测：tsc 0 错误、next build 通过、seed:dev + smoke 17/17 通过、worker 本地引导正常、Playwright 全页截图（桌面/手机，真实/展示）目检通过
 - [x] 文档：CLAUDE.md 状态与验证命令、TECH_DESIGN §4.4/§4.5/§8、DEPLOY §4、AGENT_GUIDE
-- [ ] 管理员：审阅后批准 git push + 云助手部署（`git pull && docker compose up -d --build`）
-- [ ] 管理员：docs/UI_REDESIGN.md §2.2 四项 schema 变更是否批准（体验包 BuildRun、每 Agent 独立 git 凭据、LLM 成本字段、微信发送失败态）
+- [x] 2026-09-08 管理员批准：已 push 9c03f8e；schema 四项变更批准，开始实施
+- [x] schema 扩展迁移 `20260908061456_p1_extensions`：LlmUsageLog.costEstimate / WechatOutbox 失败态 / AgentAccount.gitTokenEnc / BuildRun 表（本地已 migrate dev）
+- [x] LLM 成本入库 + 工作台优先累加入库成本
+- [x] 微信发送失败态（ack 上报、5 次停发、设置页发送队列重试/丢弃、bridge 插件已改）
+- [x] 每 Agent git 凭据（智能体页录入/清除，认领优先下发本 Agent PAT）
+- [x] 体验包（BuildRun、worker run-build、$BUILD_OUT 约定、公开令牌下载、分支审查页面板、docker-compose builds 卷）
+- [x] 自测：tsc 0 错误、build 通过、seed:dev + smoke 23/23、截图目检；文档 ADR-003 / TECH_DESIGN / DEPLOY / UI_REDESIGN 同步
+- [ ] 管理员：确认后执行线上升级（含 prisma migrate deploy，见 DEPLOY §7）；aliyun CLI 两个 profile 都查不到实例 i-uf69vvyc9bfpd510ccdw，需确认实例 ID / 区域或改走 ECS 控制台云助手
+- [ ] 上线后：为各项目填写构建命令（产物写 $BUILD_OUT）；bridge 插件需重新部署以上报发送失败
 - [ ] 上线后：设置页配置 LLM 单价表（成本估算）、按需开放 Web 表单入口、复核 cron 时间
 
 ## 已完成（历史）
